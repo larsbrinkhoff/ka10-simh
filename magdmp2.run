@@ -1,0 +1,6 @@
+# Boot off a MAGDMP/MAGFRM magtape.
+set mta type=a
+at mta0 magdmp.tap
+set mta debug=detail
+set debug stdout
+boot mta0

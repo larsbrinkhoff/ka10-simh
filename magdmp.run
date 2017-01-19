@@ -1,0 +1,7 @@
+# Boot off a MAGDMP paper tape
+set mta type=a
+set mta debug=detail
+set debug stdout
+at mta0 magdmp.tap
+load -r magdmp.rim
+go
