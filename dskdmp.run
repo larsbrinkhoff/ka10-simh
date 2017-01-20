@@ -1,0 +1,7 @@
+# Boot off a DSKDMP paper tape.
+set cpu debug=detail
+at dpa0 disk.rp03
+set dpa debug=detail
+set debug stdout
+load -r dskdmp.rim
+go
