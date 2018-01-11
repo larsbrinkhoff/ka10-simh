@@ -1853,6 +1853,8 @@ int nlzero(uint64 w) {
     return n;
 }
 
+int logging;
+
 t_stat sim_instr (void)
 {
 t_stat reason;
@@ -2118,6 +2120,16 @@ st_pi:
         AR = SWAP_AR;
     }
 
+if ((FLAGS & USER) && IA == 0420112)
+   logging = 1;
+if (logging && (FLAGS & USER) && !(IA == 017 && AD == 0344000000017LL))
+  {
+    int i;
+    fprintf (stderr, "%07o: %012llo ", IA, AD);
+    for (i = 0; i < 16; i++)
+      fprintf (stderr, " %012llo", get_reg(i));
+    fprintf (stderr, "\n");
+ }
     /* Process the instruction */
     switch (IR) {
 muuo:
