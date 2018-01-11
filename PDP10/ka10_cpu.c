@@ -4068,11 +4068,16 @@ fxnorm:
               f = ((AD & SMASK) != 0);
               goto skip_op;                   /* JUMP, SKIP */
 
+    case 0344:     /* AOJA  */
+#if ITS
+              if (QITS && (FLAGS & USER) && IA == 017
+                  && AC == 0 && AB == 017)
+                  sim_idle (0, FALSE);
+#endif
     case 0340:     /* AOJ   */
     case 0341:     /* AOJL  */
     case 0342:     /* AOJE  */
     case 0343:     /* AOJLE */
-    case 0344:     /* AOJA  */
     case 0345:     /* AOJGE */
     case 0346:     /* AOJN  */
     case 0347:     /* AOJG  */
