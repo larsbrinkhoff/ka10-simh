@@ -320,6 +320,8 @@ t_stat mt_devio(uint32 dev, uint64 *data) {
 
      case CONI|04:
           res = status;
+          if ((uptr->u3 & MT_BUSY) == 0)
+              res |= NEXT_UNIT;
           if ((uptr->flags & MTUF_7TRK) != 0)
               res |= SEVEN_CHAN;
           if ((uptr->flags & UNIT_ATT) != 0 && (uptr->u3 & MT_MOTION) == 0)
