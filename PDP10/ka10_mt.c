@@ -244,10 +244,12 @@ t_stat mt_devio(uint32 dev, uint64 *data) {
               uptr->u3 &= ~(MT_BRFUL|MT_BUFFUL);
               switch(cmd & 07) {
               case NOP_CLR:
-                     status |= JOB_DONE;
                      uptr->u3 &= ~MT_BUSY;
                      sim_debug(DEBUG_EXP, dptr, "Setting status %012llo\n", status);
-                     set_interrupt(MT_DEVNUM+4, pia >> 3);
+                     if (cmd & 010) {
+                       status |= JOB_DONE;
+                       set_interrupt(MT_DEVNUM+4, pia >> 3);
+                     }
                      return SCPE_OK;
 
               case REWIND:
