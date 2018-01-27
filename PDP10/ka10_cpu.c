@@ -1842,8 +1842,6 @@ int nlzero(uint64 w) {
 }
 
 int logging;
-int nomore = 0;
-int blki_n = 0;
 
 t_stat sim_instr (void)
 {
@@ -1940,39 +1938,6 @@ fetch:
               goto st_pi;
            goto last;
        }
-
-       if ((FLAGS & USER) &&
-	   PC == 021134)
-	 {
-	   printf ("[IOT @ %o]", PC);
-	   fflush (stdout);
-	 }
-
-       if ((FLAGS & USER) &&
-	   PC == 021135 &&
-	   MB == 0336000000245LL &&
-	   get_reg(1) == 041101LL)
-	 {
-	   int buf_addr = 037101;
-	   int a, old_AB;
-	   uint64 old_MB;
-
-	   old_AB = AB;
-	   old_MB = MB;
-	   for (a = buf_addr; a < buf_addr + 02000; a++)
-	     {
-	       AB = a;
-	       if (Mem_read(pi_cycle | uuo_cycle, 1, 0) == 0 &&
-		   MB != 0406050306424)
-		 {
-		   printf ("[IOT %o->%o %llo]", AB, PA, MB);
-		   fflush (stdout);
-	         }
-	     }
-
-	   AB = old_AB;
-	   MB = old_MB;
-	 }
 
 no_fetch:
        IR = (MB >> 27) & 0777;
@@ -2147,17 +2112,6 @@ st_pi:
     if (i_flags & SWAR) {
         AR = SWAP_AR;
     }
-
-if ((FLAGS & USER) && IA == 0420112)
-   logging = 1;
-if (logging && (FLAGS & USER) && !(IA == 017 && AD == 0344000000017LL))
-  {
-    int i;
-    fprintf (stderr, "%07o: %012llo ", IA, AD);
-    for (i = 0; i < 16; i++)
-      fprintf (stderr, " %012llo", get_reg(i));
-    fprintf (stderr, "\n");
- }
 
     /* Process the instruction */
     switch (IR) {
@@ -4528,22 +4482,13 @@ fetch_opr:
                           if (Mem_read(pi_cycle, 0, 0))
                               goto last;
                           AR = MB;
-		    if (d == (0340 >> 2) && !nomore) {
-		      nomore = 1;
-		      printf ("[BLKI@%o %llo->", PC, AR);
-		      fflush (stdout);
-		      blki_n++;
-		    }
                           if (hst_lnt) {
                                   hst[hst_p].mb = AR;
                           }
                           AC |= 1;    /* Make into DATAI/DATAO */
                           AR = AOB(AR);
                           if (AR & C1) {
-			      printf ("%llo @ %o]", AR, PC);
-			      fflush (stdout);
                               pi_ov = 1;
-			      nomore = 0;
 			  }
                           else if (!pi_cycle)
                               PC = (PC + 1) & RMASK;
@@ -4552,11 +4497,6 @@ fetch_opr:
                           if (Mem_write(pi_cycle, 0))
                               goto last;
                           AB = AR & RMASK;
-			  if (blki_n == 3)
-			    {
-			      printf ("[%o @ %o]", AB, PC);
-			      fflush (stdout);
-			    }
                           goto fetch_opr;
 
                   case 1:     /* 04 DATAI */

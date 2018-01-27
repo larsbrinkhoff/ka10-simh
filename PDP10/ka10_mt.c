@@ -193,6 +193,9 @@ DEVICE              mt_dev = {
     NULL, NULL, &mt_help, NULL, NULL, &mt_description
 };
 
+char *cause = "(nothing)";
+int debugdata = 0;
+
 t_stat mt_devio(uint32 dev, uint64 *data) {
       uint64     res;
       DEVICE    *dptr = &mt_dev;
@@ -233,6 +236,7 @@ t_stat mt_devio(uint32 dev, uint64 *data) {
           uptr->u3 = (int32)(*data & 077300);
           CLR_BUF(uptr);
           mt_df10.buf = 0;
+	  fprintf (stderr, "mt_df10.buf cleared by CONO\n");
           sim_debug(DEBUG_CONO, dptr, 
                   "MT CONO %03o start %o %o %o %012llo %012llo PC=%06o\n",
                       dev, uptr->u3, unit, pia, *data, status, PC);
@@ -240,6 +244,7 @@ t_stat mt_devio(uint32 dev, uint64 *data) {
               /* Check if Write */
               int  cmd = (uptr->u3 & FUNCTION) >> 9;
               uptr->u3 &= ~(MT_BRFUL|MT_BUFFUL);
+	      fprintf (stderr, "BRFUL and BUFFUL cleared in CONO\n");
               switch(cmd & 07) {
               case NOP_CLR:
                      uptr->u3 &= ~MT_BUSY;
@@ -281,6 +286,8 @@ t_stat mt_devio(uint32 dev, uint64 *data) {
                      if ((dptr->flags & MTDF_TYPEB) == 0) {
                          status |= DATA_REQUEST;
                          set_interrupt(MT_DEVNUM, pia);
+			 fprintf(stderr, "SPC\n");
+			 cause = "SPC";
                      }
               }
               status |= IDLE_UNIT;
@@ -295,20 +302,37 @@ t_stat mt_devio(uint32 dev, uint64 *data) {
      case DATAI:
           /* Xfer data */
           clr_interrupt(MT_DEVNUM);
+	  if (hold_reg == 0406050306424)
+	    {
+	      debugdata = 1;
+	    }
+	  else if (debugdata)
+	    {
+	      fprintf (stderr, "[BUG: %012llo]\n", hold_reg);
+	      fprintf (stderr, "[cause: %s]\n", cause);
+	      fflush (stderr);
+	    }
           *data = hold_reg;
+          sim_debug(DEBUG_DATA, dptr, "MT %03o >%012llo\n", dev, *data);
           uptr->u3 &= ~MT_BUFFUL;
+	  fprintf (stderr, "BUFFUL cleared in DATAI\n");
           status &= ~DATA_REQUEST;
           if (uptr->u3 & MT_BRFUL) {
              hold_reg = mt_df10.buf;
+	     fprintf (stderr, "hold_reg <- %012llo\n", hold_reg);
              mt_df10.buf = 0;
+	     fprintf (stderr, "mt_df10.buf cleared by hold_reg\n");
              uptr->u3 &= ~MT_BRFUL;
+	     fprintf (stderr, "BRFUL cleared in DATAI\n");
              uptr->u3 |= MT_BUFFUL;
+	     fprintf (stderr, "BUFFUL set in DATAI\n");
              if ((dptr->flags & MTDF_TYPEB) == 0) {
                  status |= DATA_REQUEST;
                  set_interrupt(MT_DEVNUM, pia);
+		 fprintf(stderr, "DATAI\n");
+		 cause = "BRFUL/DATAI";
              }
           }
-          sim_debug(DEBUG_DATA, dptr, "MT %03o >%012llo\n", dev, *data);
           break;
 
      case DATAO:
@@ -393,6 +417,7 @@ void mt_df10_read(DEVICE *dptr, UNIT *uptr) {
             if ((uptr->u3 & MT_STOP) == 0) {
                 status |= DATA_REQUEST;
                 set_interrupt(MT_DEVNUM, pia);
+		cause = "BUFFUL/DF10 read";
             }
         } else {
             if ((uptr->u3 & MT_STOP) == 0) {
@@ -403,7 +428,9 @@ void mt_df10_read(DEVICE *dptr, UNIT *uptr) {
         }
      }
      uptr->u3 &= ~MT_BUFFUL;
+     fprintf (stderr, "BUFFUL cleared in df10_read\n");
      uptr->u3 |= MT_BRFUL;
+     fprintf (stderr, "BRFUL set in df10_read\n");
      uptr->u5 = 0;
 }
 
@@ -415,22 +442,30 @@ void mt_df10_write(DEVICE *dptr, UNIT *uptr) {
             return;
         }
         uptr->u3 &= ~(MT_BUFFUL|MT_BRFUL);
+	fprintf (stderr, "BRFUL and BUFFUL cleared in df10_write 1\n");
      } else {
         if (uptr->u3 & MT_BRFUL) {
             status |= DATA_LATE;
             uptr->u3 |= MT_STOP;
+	    fprintf (stderr, "DATA_LATE\n");
             return;
         } else if ((uptr->u3 & MT_BUFFUL) == 0) {
             hold_reg = mt_df10.buf;
             status |= DATA_REQUEST;
             uptr->u3 &= ~(MT_BRFUL);
+	    fprintf (stderr, "BRFUL cleared in df10_write 2\n");
             uptr->u3 |= MT_BUFFUL;
+	    fprintf (stderr, "BUFFUL set in df10_write\n");
             set_interrupt(MT_DEVNUM, pia);
+	    fprintf(stderr, "DF10\n");
+	    cause = "BUFFUL/DF10 write";
         } else {
             uptr->u3 |= MT_BRFUL;
+	    fprintf (stderr, "BRFUL set df10_write\n");
         }
      }
      mt_df10.buf = 0;
+     fprintf (stderr, "mt_df10.buf cleared by mt_df10_write\n");
      uptr->u5 = 0;
 }
 
@@ -559,7 +594,7 @@ t_stat mt_srv(UNIT * uptr)
             uptr->hwmark = reclen;
             uptr->u6 = 0;
             uptr->u5 = 0;
-            sim_activate(uptr, 100);
+            sim_activate(uptr, 1000);
             return SCPE_OK;
         }
         if ((uint32)uptr->u6 < uptr->hwmark) {
@@ -583,6 +618,7 @@ t_stat mt_srv(UNIT * uptr)
             }
             uptr->u6++;
             uptr->u5++;
+	    fprintf (stderr, "mt_df10.buf = %012llo, u5=%d\n", mt_df10.buf, uptr->u5);
             status &= ~CHAR_COUNT;
             status |= (uint64)(uptr->u5) << 18;
             if (uptr->u5 == cc_max)
@@ -620,6 +656,7 @@ t_stat mt_srv(UNIT * uptr)
              if ((dptr->flags & MTDF_TYPEB) == 0) {
                  status |= DATA_REQUEST;
                  set_interrupt(MT_DEVNUM, pia);
+		 cause = "CMP";
              }
              sim_activate(uptr, 100);
              return SCPE_OK;
@@ -666,6 +703,7 @@ t_stat mt_srv(UNIT * uptr)
             if (uptr->u5 == cc_max) {
                uptr->u5 = 0;
                uptr->u3 &= ~MT_BRFUL;
+	       fprintf (stderr, "BRFUL cleared in CMP\n");
             }
             status &= ~CHAR_COUNT;
             status |= (uint64)(uptr->u5) << 18;
@@ -708,6 +746,7 @@ t_stat mt_srv(UNIT * uptr)
             if (uptr->u5 == cc_max) {
                uptr->u5 = 0;
                uptr->u3 &= ~MT_BRFUL;
+	       fprintf (stderr, "BRFUL cleared in CMP\n");
             }
             status &= ~CHAR_COUNT;
             status |= (uint64)(uptr->u5) << 18;
@@ -772,12 +811,13 @@ t_stat mt_srv(UNIT * uptr)
                 return mt_error(uptr, MTSE_OK, dptr);
             }
             uptr->u3 &= ~MT_BRFUL;
+	    fprintf (stderr, "BRFUL cleared in SPC\n");
         }
         uptr->hwmark = 0;
         sim_activate(uptr, 5000);
         return SCPE_OK;
     }
-    sim_activate(uptr, 200);
+    sim_activate(uptr, 5*200);
     return SCPE_OK;
 }
 
@@ -846,6 +886,7 @@ mt_boot(int32 unit_num, DEVICE * dptr)
     if (((uint32)uptr->u6 < uptr->hwmark) && (dptr->flags & MTDF_TYPEB) == 0) {
         uptr->u3 |= MT_MOTION|MT_BUSY;
         uptr->u3 &= ~(MT_BRFUL|MT_BUFFUL);
+	fprintf (stderr, "BRFUL and BUFFUL cleared in boot\n");
         sim_activate(uptr, 300);
     }
     PC = mt_df10.buf & RMASK;
