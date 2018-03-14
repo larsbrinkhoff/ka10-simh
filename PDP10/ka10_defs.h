@@ -320,6 +320,7 @@ extern DEVICE   dc_dev;
 extern DEVICE   dt_dev;
 extern DEVICE   dk_dev;
 extern DEVICE   pd_dev;
+extern DEVICE   kaimp_dev;
 extern DEVICE   dpy_dev;
 extern DEVICE   imx_dev;
 extern DEVICE   tk10_dev;
@@ -396,9 +397,9 @@ extern void ka10_lights_clear_aux (int);
 #define NUM_DEVS_IMX    ITS
 #define NUM_DEVS_TK10   ITS
 #define NUM_DEVS_MTY    ITS
+#define NUM_DEVS_KAIMP  ITS
 #define NUM_DEVS_DPY    USE_DISPLAY
 #define NUM_DEVS_WCNSLS USE_DISPLAY
-#define NUM_DEVS_IMP    0
 /* Global data */
 
 
