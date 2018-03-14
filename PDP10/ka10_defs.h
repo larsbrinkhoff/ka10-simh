@@ -320,6 +320,7 @@ extern DEVICE   dc_dev;
 extern DEVICE   dt_dev;
 extern DEVICE   dk_dev;
 extern DEVICE   pd_dev;
+extern DEVICE   kaimp_dev;
 extern DEVICE   dpy_dev;
 extern DEVICE   wcnsls_dev;             /* MIT Spacewar Consoles */
 
@@ -384,6 +385,7 @@ int  df10_write(struct df10 *df);
 #define NUM_DEVS_RS     1
 #define NUM_DEVS_TU     1
 #define NUM_DEVS_PD     ITS
+#define NUM_DEVS_KAIMP  ITS
 #define NUM_DEVS_DPY    USE_DISPLAY
 #define NUM_DEVS_WCNSLS USE_DISPLAY
 #define NUM_DEVS_IMP    0
