@@ -99,7 +99,7 @@ MTAB kaimp_mod[] = {
     // mac
     };
 
-DEVICE kaimp_dev = {
+DEVICE imp_dev = {
     "KAIMP", kaimp_unit, NULL, kaimp_mod,
     1, 8, 0, 1, 8, 36,
     NULL, NULL, kaimp_reset, NULL, NULL, NULL,
