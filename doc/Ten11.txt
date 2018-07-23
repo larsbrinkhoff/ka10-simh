@@ -1,0 +1,30 @@
+Protocol.
+
+Sent from PDP-10
+
+  [ 6, 1, a1, a2, a3, d1, d2 ]
+
+  DATO write request.  a1-a3 is address in little endian format.
+  d1-d2 is data in little endian format.
+
+  [ 4, 2, a1, a2, a3 ]
+
+  DATI read request.  As above.
+
+Sent from PDP-11
+
+  [ 0, n ]
+
+  I'm on Unibus number n.
+
+  [ 1, 3 ]
+
+  Write ACK.
+
+  [ 3, 3, d1, d2 ]
+
+  Read ACK.  d1-d2 is data in litte endian format.
+
+  [ 1, 4 ]
+
+  Read or write error.
