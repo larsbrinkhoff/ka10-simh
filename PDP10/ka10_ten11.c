@@ -48,7 +48,6 @@ static uint64 ten11_pager[256];
 #define T11LIMIT        (0000000001777LL)
 
 /* External Unibus interface. */
-#define BUSNO           0
 #define DATO            1
 #define DATI            2
 #define ACK             3
@@ -67,13 +66,14 @@ static int write_all (int fd, unsigned char *data, int n);
 
 static void build (unsigned char *request, unsigned char octet)
 {
-  request[0]++;
-  request[request[0]] = octet;
+  request[1]++;
+  request[request[1] + 1] = octet;
 }
 
 static int error (const char *message)
 {
-  sim_debug (DEBUG_TEN11, &cpu_dev, "%s", message);
+  sim_debug (DEBUG_TEN11, &cpu_dev, "%s\r\n", message);
+  sim_debug (DEBUG_TEN11, &cpu_dev, "CLOSE\r\n");
   close (ten11_fd);
   ten11_fd = -1;
   return -1;
@@ -81,7 +81,6 @@ static int error (const char *message)
 
 int ten11_check (void)
 {
-  unsigned char request[8], response[8];
   struct sockaddr_in address;
   int n, s;
 
@@ -93,18 +92,24 @@ int ten11_check (void)
   if (ten11_fd == -1)
     return errno == EWOULDBLOCK ? 0 : -1;
 
-  if (read_all (ten11_fd, request, 3) == -1)
-    return error ("Couldn't read Unibus number");
+  fprintf (stderr, "Accepted connection\r\n");
 
-  if (request[0] != 2 || request[1] != 0)
-    return error ("Bad Unibus number");
+#if 0
+  n = fcntl (ten11_fd, F_GETFL, 0);
+  if (n == -1)
+    {
+      close (ten11_fd);
+      return -1;
+    }
+  //if (fcntl (ten11_fd, F_SETFL, n & ~O_NONBLOCK) == -1)
+  if (fcntl (ten11_fd, F_SETFL, n | O_NONBLOCK) == -1)
+    {
+      close (ten11_fd);
+      return -1;
+    }
+#endif
 
-  sim_debug (DEBUG_TEN11, &cpu_dev, "Unibus %d attached\r\n", request[2]);
-
-  memset (response, 0, sizeof response);
-  build (response, ACK);
-  if (write_all (ten11_fd, response, 2) == -1)
-    error ("Couldn't reply to Unibus number");
+  sim_debug (DEBUG_TEN11, &cpu_dev, "Unibus attached\r\n");
 
   return 0;
 }
@@ -171,10 +176,19 @@ static int write_all (int fd, unsigned char *data, int n)
 {
   int m;
 
+#if 0
+  fprintf (stderr, "[write_all:");
+  for (m = 0; m < n; m++)
+    fprintf (stderr, " %o", data[m]);
+  fprintf (stderr, "]\r\n");
+#endif
+
   while (n > 0) {
     m = write (fd, data, n);
     if (m == -1)
       return -1;
+    if (m == 0)
+      error ("Write EOF");
     data += m;
     n -= m;
   }
@@ -186,9 +200,18 @@ static int read_all (int fd, unsigned char *data, int n)
 {
   int m;
 
+  //fprintf (stderr, "[RA:%d]", n); fflush (stderr);
   while (n > 0) {
+    //fprintf (stderr, "[got:"); fflush (stderr);
     m = read (fd, data, n);
+    //fprintf (stderr, "%d]", m); fflush (stderr);
     if (m == -1)
+      {
+        if (errno == EWOULDBLOCK)
+          continue;
+        return -1;
+      }
+    if (m == 0)
       return -1;
     data += m;
     n -= m;
@@ -199,15 +222,24 @@ static int read_all (int fd, unsigned char *data, int n)
 
 static int transaction (unsigned char *request, unsigned char *response)
 {
-  if (write_all (ten11_fd, request, request[0] + 1) == -1)
+  sim_debug (DEBUG_TEN11, &cpu_dev, "Sending request: %o %o %o...\n", request[0], request[1], request[2]);
+  if (write_all (ten11_fd, request, request[1] + 2) == -1)
     return error ("Write error in transaction");
   flush_socket (ten11_fd);
 
-  if (read (ten11_fd, response, 1) != 1)
-    return error ("Read error in transaction");
-  if (response[0] > 7)
+  sim_debug (DEBUG_TEN11, &cpu_dev, "Read packet length\n");
+  if (read_all (ten11_fd, response, 2) == -1)
+    return error ("Read error reading packet");
+
+  sim_debug (DEBUG_TEN11, &cpu_dev, "Packet length %o %o\n", response[0], response[1]);
+  if (response[0] != 0 || response[1] > 7) {
+    char c;
+    while (read (ten11_fd, &c, 1) == 1)
+      fprintf (stderr, "[%o]\r\n", c);
     return error ("Malformed transaction");
-  if (read_all (ten11_fd, response + 1, response[0]) == -1)
+  }
+  sim_debug (DEBUG_TEN11, &cpu_dev, "Read data\n");
+  if (read_all (ten11_fd, response + 2, response[1]) == -1)
     return error ("Read error in transaction");
 
   return 0;
@@ -222,16 +254,16 @@ static int read_word (int addr, int *data)
 
   memset (request, 0, sizeof request);
   build (request, DATI);
-  build (request, addr);
-  build (request, addr >> 8);
   build (request, addr >> 16);
+  build (request, addr >> 8);
+  build (request, addr);
 
   transaction (request, response);
 
-  switch (response[1])
+  switch (response[2])
     {
     case ACK:
-      *data = response[2];
+      *data = response[4];
       *data |= response[3] << 8;
       break;
     case ERR:
@@ -258,7 +290,7 @@ int ten11_read (int addr)
     /* Accessing the control page. */
     if (offset >= 0400) {
       sim_debug (DEBUG_TEN11, &cpu_dev,
-                 "Control page read NXM: %o @ %o\r\n",
+                 "Control page read NXM: %o @ %o\n",
                  offset, PC);
       return 1;
     }
@@ -272,7 +304,7 @@ int ten11_read (int addr)
     limit = mapping & T11LIMIT;
     if ((mapping & T11VALID) == 0 || offset > limit) {
       sim_debug (DEBUG_TEN11, &cpu_dev,
-                 "(%o) %07o >= 4,,000000 / %llo / %o > %o\r\n",
+                 "(%o) %07o >= 4,,000000 / %llo / %o > %o\n",
                  page, addr, (mapping & T11VALID), offset, limit);
       return 1;
     }
@@ -288,7 +320,7 @@ int ten11_read (int addr)
     MB |= data << 4;
     
     sim_debug (DEBUG_TEN11, &cpu_dev,
-               "Read: (%o) %06o -> %012llo\r\n",
+               "Read: (%o) %06o -> %012llo\n",
                unibus, uaddr, MB);
   }
   return 0;
@@ -303,15 +335,15 @@ static int write_word (int addr, int data)
 
   memset (request, 0, sizeof request);
   build (request, DATO);
-  build (request, addr);
-  build (request, addr >> 8);
   build (request, addr >> 16);
-  build (request, data);
+  build (request, addr >> 8);
+  build (request, addr);
   build (request, data >> 8);
+  build (request, data);
 
   transaction (request, response);
 
-  switch (response[1])
+  switch (response[2])
     {
     case ACK:
       break;
@@ -336,13 +368,13 @@ int ten11_write (int addr)
     /* Accessing the control page. */
     if (offset >= 0400) {
       sim_debug (DEBUG_TEN11, &cpu_dev,
-                 "Control page write NXM: %o @ %o\r\n",
+                 "Control page write NXM: %o @ %o\n",
                  offset, PC);
       return 1;
     }
     ten11_pager[offset] = MB;
     sim_debug (DEBUG_TEN11, &cpu_dev,
-               "Page %03o: %s %s (%llo) %06llo/%04llo\r\n",
+               "Page %03o: %s %s (%llo) %06llo/%04llo\n",
                offset,
                (MB & T11VALID) ? "V" : "I",
                (MB & T11WRITE) ? "RW" : "R",
@@ -357,7 +389,7 @@ int ten11_write (int addr)
     limit = mapping & T11LIMIT;
     if ((mapping & T11VALID) == 0 || offset > limit) {
       sim_debug (DEBUG_TEN11, &cpu_dev,
-                 "(%o) %07o >= 4,,000000 / %llo / %o > %o\r\n",
+                 "(%o) %07o >= 4,,000000 / %llo / %o > %o\n",
                  page, addr, (mapping & T11VALID), offset, limit);
       return 1;
     }
@@ -365,7 +397,7 @@ int ten11_write (int addr)
     uaddr = ((mapping & T11ADDR) >> 10) + offset;
     uaddr <<= 2;
     sim_debug (DEBUG_TEN11, &cpu_dev,
-               "Write: (%o) %06o <- %012llo\r\n",
+               "Write: (%o) %06o <- %012llo\n",
                unibus, uaddr, MB);
 
     if ((MB & 010) == 0)
