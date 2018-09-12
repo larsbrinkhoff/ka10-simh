@@ -2044,8 +2044,6 @@ if ((reason = build_dev_tab ()) != SCPE_OK)            /* build, chk dib_tab */
 #endif
 
   while ( reason == 0) {                                /* loop until ABORT */
-    ten11_check();
-
     if (sim_interval <= 0) {                           /* check clock queue */
          if ((reason = sim_process_event()) != SCPE_OK) {/* error?  stop sim */
 #if ITS
@@ -4964,7 +4962,6 @@ sim_activate(&cpu_unit[0], 10000);
 #if ITS
 if (QITS) {
     sim_rtcn_init_unit (&cpu_unit[1], cpu_unit[1].wait, TMR_RTC);
-    ten11_init ();
 }
 #endif
 #if MPX_DEV

@@ -24,6 +24,7 @@
 */
 
 #include "ka10_defs.h"
+#include "sim_tmxr.h"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -54,20 +55,323 @@ static uint64 ten11_pager[256];
 #define ERR             4
 #define TIMEOUT         5
 
+#define UNIT_SHMEM (1u << UNIT_V_UF)
+#define TEN11_POLL  100
+
 /* Simulator time units for a Unibus memory cycle. */
 #define UNIBUS_MEM_CYCLE 100
 
 
+static uint16 *ten11_M = NULL;
 static int ten11_server;
 static int ten11_fd = -1;
 
-static int read_all (int fd, unsigned char *data, int n);
-static int write_all (int fd, unsigned char *data, int n);
+static t_stat ten11_svc (UNIT *uptr);
+static t_stat ten11_conn_svc (UNIT *uptr);
+static t_stat ten11_setmode (UNIT* uptr, int32 val, CONST char* cptr, void* desc);
+static t_stat ten11_showmode (FILE* st, UNIT* uptr, int32 val, CONST void* desc);
+static t_stat ten11_setpeer (UNIT* uptr, int32 val, CONST char* cptr, void* desc);
+static t_stat ten11_showpeer (FILE* st, UNIT* uptr, int32 val, CONST void* desc);
+static t_stat ten11_reset (DEVICE *dptr);
+static t_stat ten11_attach (UNIT *uptr, CONST char *ptr);
+static t_stat ten11_detach (UNIT *uptr);
+static t_stat ten11_attach_help (FILE *st, DEVICE *dptr, UNIT *uptr, int32 flag, const char *cptr);
+static const char *ten11_description (DEVICE *dptr);
+
+static UNIT ten11_unit[2] = {
+    { UDATA (&ten11_svc,        UNIT_IDLE|UNIT_ATTABLE, 0), TEN11_POLL },
+    { UDATA (&ten11_conn_svc,   UNIT_DIS,               0) }
+};
+
+static UNIT *ten11_action_unit = &ten11_unit[0];
+static UNIT *ten11_connection_unit = &ten11_unit[1];
+#define PEERSIZE 512
+static char ten11_peer[PEERSIZE];
+
+static REG ten11_reg[] = {
+    { DRDATAD  (POLL, ten11_unit[0].wait,   24,    "poll interval"), PV_LEFT },
+    { BRDATA   (PEER, ten11_peer,    8,       8, PEERSIZE),          REG_HRO },
+    { NULL }
+};
+
+static MTAB ten11_mod[] = {
+    { MTAB_XTD|MTAB_VDV,          0, "MODE", "MODE={SHMEM|NETWORK}",
+        &ten11_setmode, &ten11_showmode, NULL, "Display access mode" },
+    { MTAB_XTD|MTAB_VDV,          0, "PEER", "PEER=address:port",
+        &ten11_setpeer, &ten11_showpeer, NULL, "Display destination/source" },
+    { 0 }
+};
+
+#define DBG_TRC         1
+#define DBG_CMD         2
+
+static DEBTAB ten11_debug[] = {
+    {"TRACE",   DBG_TRC,    "Routine trace"},
+    {"CMD",     DBG_CMD,    "Command Processing"},
+    {0},
+};
+
+DEVICE ten11_dev = {
+    "TEN11", ten11_unit, ten11_reg, ten11_mod,
+    1, 8, 16, 2, 8, 16,
+    NULL,                                               /* examine */
+    NULL,                                               /* deposit */
+    &ten11_reset,                                       /* reset */
+    NULL,                                               /* boot */
+    ten11_attach,                                       /* attach */
+    ten11_detach,                                       /* detach */
+    NULL,                                               /* context */
+    DEV_DISABLE | DEV_DIS | DEV_DEBUG | DEV_MUX,
+    DBG_CMD,                                            /* debug control */
+    ten11_debug,                                        /* debug flags */
+    NULL,                                               /* memory size chage */
+    NULL,                                               /* logical name */
+    NULL,                                               /* help */
+    &ten11_attach_help,                                 /* attach help */
+    NULL,                                               /* help context */
+    &ten11_description,                                 /* description */
+};
+
+static TMLN ten11_ldsc;                                 /* line descriptor */
+static TMXR ten11_desc = { 1, 0, 0, &ten11_ldsc };      /* mux descriptor */
+#define PEERSIZE 512
+static char ten11_peer[PEERSIZE];
+SHMEM *pdp11_shmem = NULL;                              /* PDP11 shared memory info */
+
+static t_stat ten11_reset (DEVICE *dptr)
+{
+sim_debug(DBG_TRC, dptr, "ten11_reset()\n");
+
+ten11_action_unit->flags |= UNIT_ATTABLE;
+ten11_action_unit->action = ten11_svc;
+ten11_connection_unit->flags |= UNIT_DIS | UNIT_IDLE;
+ten11_connection_unit->action = ten11_conn_svc;
+ten11_desc.packet = TRUE;
+ten11_desc.notelnet = TRUE;
+ten11_desc.buffered = 2048;
+
+return SCPE_OK;
+}
+
+t_stat ten11_showpeer (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
+{
+if (ten11_peer[0])
+    fprintf(st, "peer=%s", ten11_peer);
+else
+    fprintf(st, "peer=unspecified");
+return SCPE_OK;
+}
+
+t_stat ten11_setmode (UNIT* uptr, int32 val, CONST char* cptr, void* desc)
+{
+char gbuf[CBUFSIZE];
+
+if ((!cptr) || (!*cptr))
+    return SCPE_ARG;
+if (uptr->flags & UNIT_ATT)
+    return SCPE_ALATT;
+if (!(uptr->flags & UNIT_ATTABLE))
+    return SCPE_NOATT;
+cptr = get_glyph (cptr, gbuf, 0);
+if (0 == strcmp ("SHMEM", gbuf))
+    uptr->flags |= UNIT_SHMEM;
+else {
+    if (0 == strcmp ("NETWORK", gbuf))
+        uptr->flags &= ~UNIT_SHMEM;
+    else
+        return sim_messagef (SCPE_ARG, "Unknown mode: %s\n", gbuf);
+    }
+return SCPE_OK;
+}
+
+t_stat ten11_showmode (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
+{
+fprintf(st, "mode=%s", (uptr->flags & UNIT_SHMEM) ? "SHMEM" : "NETWORK");
+return SCPE_OK;
+}
+
+t_stat ten11_setpeer (UNIT* uptr, int32 val, CONST char* cptr, void* desc)
+{
+char host[PEERSIZE], port[PEERSIZE];
+
+if ((!cptr) || (!*cptr))
+    return SCPE_ARG;
+if (!(uptr->flags & UNIT_ATTABLE))
+    return SCPE_NOATT;
+if (uptr->flags & UNIT_ATT)
+    return SCPE_ALATT;
+if (uptr->flags & UNIT_SHMEM)
+    return sim_messagef (SCPE_ARG, "Peer can't be specified in Shared Memory Mode\n");
+if (sim_parse_addr (cptr, host, sizeof(host), NULL, port, sizeof(port), NULL, NULL))
+    return sim_messagef (SCPE_ARG, "Invalid Peer Specification: %s\n", cptr);
+if (host[0] == '\0')
+    return sim_messagef (SCPE_ARG, "Invalid/Missing host in Peer Specification: %s\n", cptr);
+strncpy(ten11_peer, cptr, PEERSIZE-1);
+return SCPE_OK;
+}
+
+static t_stat ten11_attach (UNIT *uptr, CONST char *cptr)
+{
+t_stat r;
+char attach_string[512];
+
+if (!cptr || !*cptr)
+    return SCPE_ARG;
+if (!(uptr->flags & UNIT_ATTABLE))
+    return SCPE_NOATT;
+if (uptr->flags & UNIT_SHMEM) {
+    void *basead;
+
+    r = sim_shmem_open (cptr, MAXMEMSIZE, &pdp11_shmem, &basead);
+    if (r != SCPE_OK)
+        return r;
+    ten11_M = (uint16 *)basead;
+    }
+else {
+    if (ten11_peer[0] == '\0')
+        return sim_messagef (SCPE_ARG, "Must specify peer before attach\n");
+    sprintf (attach_string, "%s,Connect=%s", cptr, ten11_peer);
+    r = tmxr_attach_ex (&ten11_desc, uptr, attach_string, FALSE);
+    if (r != SCPE_OK)                                       /* error? */
+        return r;
+    sim_activate_after (ten11_connection_unit, 10);    /* start poll */
+    }
+uptr->flags |= UNIT_ATT;
+return SCPE_OK;
+}
+
+static t_stat ten11_detach (UNIT *uptr)
+{
+t_stat r;
+
+if (!(uptr->flags & UNIT_ATT))                      /* attached? */
+    return SCPE_OK;
+if (uptr->flags & UNIT_SHMEM) {
+    sim_shmem_close (pdp11_shmem);
+    r = SCPE_OK;
+    }
+else {
+    sim_cancel (uptr);
+    sim_cancel (ten11_connection_unit);             /* stop connection poll as well */
+    r = tmxr_detach (&ten11_desc, uptr);
+    }
+uptr->flags &= ~UNIT_ATT;
+free (uptr->filename);
+uptr->filename = NULL;
+return r;
+}
 
 static void build (unsigned char *request, unsigned char octet)
 {
   request[1]++;
   request[request[1] + 1] = octet;
+}
+
+static t_stat ten11_svc (UNIT *uptr)
+{
+  return SCPE_OK;
+}
+
+static t_stat ten11_conn_svc (UNIT *uptr)
+{
+int32 newconn;
+
+sim_debug(DBG_TRC, &ten11_dev, "ten11_conn_svc()\n");
+
+newconn = tmxr_poll_conn(&ten11_desc);      /* poll for a connection */
+if (newconn >= 0) {                         /* got a live one? */
+    sim_debug(DBG_CMD, &ten11_dev, "got connection\n");
+    ten11_ldsc.rcve = 1;
+    sim_activate (ten11_action_unit, ten11_action_unit->wait);  /* Start activity poll */
+    }
+sim_activate_after (uptr, 10);
+return SCPE_OK;
+}
+
+
+static t_stat ten11_attach_help (FILE *st, DEVICE *dptr, UNIT *uptr, int32 flag, const char *cptr)
+{
+const char helpString[] =
+ /* The '*'s in the next line represent the standard text width of a help line */
+     /****************************************************************************/
+    " The %D device is an implementation of the Rubin 10-11 PDP-10 to PDP-11\n"
+    " Memory Access facility.  This allows a PDP 10 system to reach into a\n"
+    " PDP-11 simulator and modify or access the contents of the PDP-11 memory.\n"
+    "1 Configuration\n"
+    " A %D device is configured with various simh SET and ATTACH commands\n"
+    "2 $Set commands\n"
+    "3 Mode\n"
+    " To memory access mode.  Options are SHMEM for Shared Memory access and\n"
+    " NETWORK for network access.  This can be configured with the\n"
+    " following command:\n"
+    "\n"
+    "+sim> SET %U MODE=SHMEM\n"
+    "+OR\n"
+    "+sim> SET %U MODE=NETWORK\n"
+    "3 Peer\n"
+    " When the memory access mode is specified as NETWORK mode, the peer system's\n"
+    " host and port to that data is to be transmitted across is specified by\n"
+    " using the following command:\n"
+    "\n"
+    "+sim> SET %U PEER=host:port\n"
+    "2 Attach\n"
+    " When in SHMEM shared memory access mode, the device must be attached\n"
+    " using an attach command which specifies the shared object name that\n"
+    " the peer system will be using:\n"
+    "\n"
+    "+sim> ATTACH %U SharedObjectName\n"
+    "\n"
+    " When in NETWORK memory access mode, the device must be attached to a\n"
+    " receive port, this is done by using the ATTACH command to specify\n"
+    " the receive port number.\n"
+    "\n"
+    "+sim> ATTACH %U port\n"
+    "\n"
+    " The Peer host:port value must be specified before the attach command.\n"
+    " The default connection uses TCP transport between the local system and\n"
+    " the peer.  Alternatively, UDP can be used by specifying UDP on the\n"
+    " ATTACH command:\n"
+    "\n"
+    "+sim> ATTACH %U port,UDP\n"
+    "\n"
+    "2 Examples\n"
+    " To configure two simulators to talk to each other using in Network memory\n"
+    " access mode, follow this example:\n"
+    " \n"
+    " Machine 1\n"
+    "+sim> SET %D ENABLE\n"
+    "+sim> SET %U PEER=LOCALHOST:2222\n"
+    "+sim> ATTACH %U 1111\n"
+    " \n"
+    " Machine 2\n"
+    "+sim> SET %D ENABLE\n"
+    "+sim> SET %U PEER=LOCALHOST:1111\n"
+    "+sim> ATTACH %U 2222\n"
+    "\n"
+    " To configure two simulators to talk to each other using SHMEM shared memory\n"
+    " access mode, follow this example:\n"
+    " \n"
+    " Machine 1\n"
+    "+sim> SET %D ENABLE\n"
+    "+sim> SET %D MODE=SHMEM\n"
+    "+sim> ATTACH %U PDP11-1-Core\n"
+    " \n"
+    " Machine 2\n"
+    "+sim> SET %D ENABLE\n"
+    "+sim> SET %D MODE=SHMEM\n"
+    "+sim> ATTACH %U PDP11-1-Core\n"
+    "\n"
+    "\n"
+    ;
+
+return scp_help (st, dptr, uptr, flag, helpString, cptr);
+return SCPE_OK;
+}
+
+
+static const char *ten11_description (DEVICE *dptr)
+{
+return "Rubin 10-11 PDP-10 to PDP-11 Memory Access";
 }
 
 static int error (const char *message)
@@ -79,168 +383,27 @@ static int error (const char *message)
   return -1;
 }
 
-int ten11_check (void)
-{
-  struct sockaddr_in address;
-  int n, s;
-
-  if (ten11_fd != -1)
-    return 0;
-
-  n = sizeof address;
-  ten11_fd = accept (ten11_server, (struct sockaddr *)&address, &n);
-  if (ten11_fd == -1)
-    return errno == EWOULDBLOCK ? 0 : -1;
-
-  fprintf (stderr, "Accepted connection\r\n");
-
-#if 0
-  n = fcntl (ten11_fd, F_GETFL, 0);
-  if (n == -1)
-    {
-      close (ten11_fd);
-      return -1;
-    }
-  //if (fcntl (ten11_fd, F_SETFL, n & ~O_NONBLOCK) == -1)
-  if (fcntl (ten11_fd, F_SETFL, n | O_NONBLOCK) == -1)
-    {
-      close (ten11_fd);
-      return -1;
-    }
-#endif
-
-  sim_debug (DEBUG_TEN11, &cpu_dev, "Unibus attached\r\n");
-
-  return 0;
-}
-
-int ten11_init (void)
-{
-  struct sockaddr_in address;
-  struct in_addr addr;
-  int n;
-
-  ten11_server = socket (PF_INET, SOCK_STREAM, 0);
-  if (ten11_server == -1)
-    return -1;
-  
-  n = fcntl (ten11_server, F_GETFL, 0);
-  if (n == -1)
-    {
-      close (ten11_server);
-      return -1;
-    }
-  if (fcntl (ten11_server, F_SETFL, n | O_NONBLOCK) == -1)
-    {
-      close (ten11_server);
-      return -1;
-    }
-
-  n = 1;
-  setsockopt (ten11_server, SOL_SOCKET, SO_REUSEADDR, (void *)&n, sizeof n);
-
-  addr.s_addr = INADDR_ANY;
-
-  memset (&address, '\0', sizeof address);
-#if defined(__FreeBSD__) || defined(__OpenBSD__)
-  address.sin_len = sizeof address;
-#endif
-  address.sin_family = PF_INET;
-  address.sin_port = htons (1234);
-  address.sin_addr = addr;
-  
-  if (bind (ten11_server, (struct sockaddr *)&address, sizeof (address)) == -1)
-    {
-      close (ten11_server);
-      return -1;
-    }
-
-  if (listen (ten11_server, 1) == -1)
-    {
-      close (ten11_server);
-      return -1;
-    } 
-
-  return 0;
-}
-
-static void flush_socket (int fd)
-{
-  int flag = 1;
-  setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof flag);
-  flag = 0;
-  setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof flag);
-}
-
-static int write_all (int fd, unsigned char *data, int n)
-{
-  int m;
-
-#if 0
-  fprintf (stderr, "[write_all:");
-  for (m = 0; m < n; m++)
-    fprintf (stderr, " %o", data[m]);
-  fprintf (stderr, "]\r\n");
-#endif
-
-  while (n > 0) {
-    m = write (fd, data, n);
-    if (m == -1)
-      return -1;
-    if (m == 0)
-      error ("Write EOF");
-    data += m;
-    n -= m;
-  }
-
-  return 0;
-}
-
-static int read_all (int fd, unsigned char *data, int n)
-{
-  int m;
-
-  //fprintf (stderr, "[RA:%d]", n); fflush (stderr);
-  while (n > 0) {
-    //fprintf (stderr, "[got:"); fflush (stderr);
-    m = read (fd, data, n);
-    //fprintf (stderr, "%d]", m); fflush (stderr);
-    if (m == -1)
-      {
-        if (errno == EWOULDBLOCK)
-          continue;
-        return -1;
-      }
-    if (m == 0)
-      return -1;
-    data += m;
-    n -= m;
-  }
-
-  return 0;
-}
-
 static int transaction (unsigned char *request, unsigned char *response)
 {
+  const uint8 *ten11_request;
+  size_t size;
+  t_stat stat;
+
   sim_debug (DEBUG_TEN11, &cpu_dev, "Sending request: %o %o %o...\n", request[0], request[1], request[2]);
-  if (write_all (ten11_fd, request, request[1] + 2) == -1)
+
+  stat = tmxr_put_packet_ln (&ten11_ldsc, request + 2, (size_t)request[1]);
+  if (stat != SCPE_OK)
     return error ("Write error in transaction");
-  flush_socket (ten11_fd);
 
-  sim_debug (DEBUG_TEN11, &cpu_dev, "Read packet length\n");
-  if (read_all (ten11_fd, response, 2) == -1)
-    return error ("Read error reading packet");
+  do {
+    tmxr_poll_rx (&ten11_desc);
+    stat = tmxr_get_packet_ln (&ten11_ldsc, &ten11_request, &size);
+  } while (stat != SCPE_OK);
 
-  sim_debug (DEBUG_TEN11, &cpu_dev, "Packet length %o %o\n", response[0], response[1]);
-  if (response[0] != 0 || response[1] > 7) {
-    char c;
-    while (read (ten11_fd, &c, 1) == 1)
-      fprintf (stderr, "[%o]\r\n", c);
+  if (size > 7)
     return error ("Malformed transaction");
-  }
-  sim_debug (DEBUG_TEN11, &cpu_dev, "Read data\n");
-  if (read_all (ten11_fd, response + 2, response[1]) == -1)
-    return error ("Read error in transaction");
+
+  memcpy (response, ten11_request, size);
 
   return 0;
 }
@@ -251,6 +414,16 @@ static int read_word (int addr, int *data)
   unsigned char response[8];
 
   sim_interval -= UNIBUS_MEM_CYCLE;
+
+  if ((ten11_action_unit->flags & UNIT_ATT) == 0) {
+      *data = 0;
+      return 0;
+  }
+
+  if (ten11_action_unit->flags & UNIT_SHMEM) {
+      *data = ten11_M[addr >> 1];
+      return 0;
+  }
 
   memset (request, 0, sizeof request);
   build (request, DATI);
@@ -332,6 +505,15 @@ static int write_word (int addr, int data)
   unsigned char response[8];
 
   sim_interval -= UNIBUS_MEM_CYCLE;
+
+  if ((ten11_action_unit->flags & UNIT_ATT) == 0) {
+      return 0;
+  }
+
+  if (ten11_action_unit->flags & UNIT_SHMEM) {
+      ten11_M[addr >> 1] = data;
+      return 0;
+  }
 
   memset (request, 0, sizeof request);
   build (request, DATO);

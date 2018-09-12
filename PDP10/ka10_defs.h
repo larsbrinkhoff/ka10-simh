@@ -374,8 +374,6 @@ int  df10_read(struct df10 *df);
 int  df10_write(struct df10 *df);
 
 extern uint64 MB;
-int ten11_init (void);
-int ten11_check (void);
 int ten11_read (int addr);
 int ten11_write (int addr);
 
