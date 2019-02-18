@@ -77,7 +77,7 @@
 #endif /* PEN_RADIUS not defined */
 
 /*
- * note: displays can have up to two different colors (eg VR20)
+ * note: displays can have up to three different colors (eg NTSC)
  * each color can be made up of any number of phosphors
  * with different colors and decay characteristics (eg Type 30)
  */
@@ -99,7 +99,7 @@ struct color {
 struct display {
     enum display_type type;
     const char *name;
-    struct color *color0, *color1;
+    struct color *color0, *color1, *color2;
     short xpoints, ypoints;
 };
 
@@ -137,6 +137,14 @@ static struct color color_p40 = { p40, ELEMENTS(p40), 20000 };
 /* "red" -- until real VR20 phosphor type/number/constants known */
 static struct phosphor pred[] = { {1.0, 0.37, 0.37, 0.5, 0.10} };
 static struct color color_red = { pred, ELEMENTS(pred), 100000 };
+
+/* NTSC */
+static struct phosphor ntsc_red[] = { {1.0, 0.0, 0.0, 0.5, 0.10} };
+static struct color color_ntsc_red = { ntsc_red, ELEMENTS(ntsc_red), 100000 };
+static struct phosphor ntsc_green[] = { {0.0, 1.0, 0.0, 0.5, 0.10} };
+static struct color color_ntsc_green = { ntsc_green, ELEMENTS(ntsc_green), 100000 };
+static struct phosphor ntsc_blue[] = { {0.0, 0.0, 1.0, 0.5, 0.10} };
+static struct color color_ntsc_blue = { ntsc_blue, ELEMENTS(ntsc_blue), 100000 };
 
 static struct display displays[] = {
    /*
@@ -150,7 +158,7 @@ static struct display displays[] = {
      * P7 Phosphor??? Two phosphor layers:
      * fast blue (.05s half life), and slow green (.2s half life)
      */
-    { DIS_TX0, "MIT TX-0", &color_p7, NULL, 512, 512 },
+    { DIS_TX0, "MIT TX-0", &color_p7, NULL, NULL, 512, 512 },
 
     
     /*
@@ -167,7 +175,7 @@ static struct display displays[] = {
      * 360 lb
      * 7A at 115+-10V 60Hz
      */
-    { DIS_TYPE30, "Type 30", &color_p7, NULL, 1024, 1024 },
+    { DIS_TYPE30, "Type 30", &color_p7, NULL, NULL, 1024, 1024 },
 
     /*
      * VR14
@@ -182,7 +190,7 @@ static struct display displays[] = {
      *  .1" change 1us to +/-.5 spot diameter
      * weight 75lb
      */
-    { DIS_VR14, "VR14", &color_p29, NULL, 1024, 768 },
+    { DIS_VR14, "VR14", &color_p29, NULL, NULL, 1024, 768 },
 
     /*
      * VR17
@@ -196,14 +204,14 @@ static struct display displays[] = {
      * light pen: Type 375
      * weight 85lb
      */
-    { DIS_VR17, "VR17", &color_p29, NULL, 1024, 1024 },
+    { DIS_VR17, "VR17", &color_p29, NULL, NULL, 1024, 1024 },
 
     /*
      * VR20
      * on VC8E
      * Two colors!!
      */
-    { DIS_VR20, "VR20", &color_p29, &color_red, 1024, 1024 },
+    { DIS_VR20, "VR20", &color_p29, &color_red, NULL, 1024, 1024 },
 
     /*
      * VR48
@@ -219,7 +227,7 @@ static struct display displays[] = {
      * driving circuitry separate
      * (normally under table on which CRT is mounted)
      */
-    { DIS_VR48, "VR48", &color_p40, NULL, 1024+VR48_GUTTER+128, 1024 },
+    { DIS_VR48, "VR48", &color_p40, NULL, NULL, 1024+VR48_GUTTER+128, 1024 },
 
     /*
      * Type 340 Display system
@@ -231,7 +239,7 @@ static struct display displays[] = {
      * 0,0 at lower left
      * 8 intensity levels
      */
-    { DIS_TYPE340, "Type 340", &color_p7, NULL, 1024, 1024 },
+    { DIS_TYPE340, "Type 340", &color_p7, NULL, NULL, 1024, 1024 },
 
     /*
      * NG display
@@ -241,7 +249,7 @@ static struct display displays[] = {
      * 512x512, out of 800x600
      * 0,0 at middle
      */
-    { DIS_NG, "NG Display", &color_p31, NULL, 512, 512 }
+    { DIS_NG, "NG Display", &color_p31, NULL, NULL, 512, 512 }
 };
 
 /*
@@ -337,7 +345,7 @@ struct point {
     delay_t delay;              /* delta T in DELAY_UNITs */
     unsigned char ttl;          /* zero means off, not linked in */
     unsigned char level : 7;    /* intensity level */
-    unsigned char color : 1;    /* for VR20 (two colors) */
+    unsigned char color : 2;    /* for VR20 (two colors), and NTSC */
 };
 
 static struct point *points;    /* allocated array of points */
@@ -397,7 +405,7 @@ static float level_scale[NLEVELS];
  * table of pointer to window system "colors"
  * for painting each age level, intensity level and beam color
  */
-void *colors[2][NLEVELS][NTTL];
+void *colors[3][NLEVELS][NTTL];
 
 void
 display_lp_radius(int r)
@@ -957,6 +965,8 @@ display_init(enum display_type type, int sf, void *dptr)
 
     if (dp->color1)
         phosphor_init(dp->color1->phosphors, dp->color1->nphosphors, 1);
+    if (dp->color2)
+        phosphor_init(dp->color2->phosphors, dp->color2->nphosphors, 2);
 
     initialized = 1;
     init_failed = 0;            /* hey, we made it! */
