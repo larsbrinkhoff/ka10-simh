@@ -1208,8 +1208,8 @@ KA10_OPT = -DKA=1 -DUSE_INT64 -I $(KA10D) -DUSE_SIM_CARD ${NETWORK_OPT}
 ifneq ($(TYPE340),)
 # ONLY tested on Ubuntu 16.04, using X11 display support:
 KA10_DPY=-DUSE_DISPLAY -DHAVE_LIBSDL -DUSE_SIM_VIDEO `$(SDLX_CONFIG) --cflags` \
-	${KA10D}/ka10_dpy.c display/type340.c  display/display.c \
-	display/sim_ws.c
+	${KA10D}/ka10_dpy.c ${KA10D}/ka10_clr.c display/type340.c \
+	display/display.c display/sim_ws.c display/clr.c
 KA10_DPY_LDFLAGS =-lm -lX11 -lXt `$(SDLX_CONFIG) --libs`
 endif
 ifneq ($(PANDA_LIGHTS),)
