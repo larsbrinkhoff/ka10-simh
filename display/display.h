@@ -48,6 +48,7 @@ enum display_type {
     DIS_TYPE30 = 30,
     DIS_VR48 = 48,
     DIS_TYPE340 = 340,
+    DIS_CLR = 420,
     DIS_NG = 999,
 };
 

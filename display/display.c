@@ -242,6 +242,17 @@ static struct display displays[] = {
     { DIS_TYPE340, "Type 340", &color_p7, NULL, NULL, 1024, 1024 },
 
     /*
+     * Color display
+     * on PDP-6/10
+     *
+     * Standard NTSC TV display
+     * 512x512
+     * ~16 intensity levels
+     */
+    { DIS_CLR, "Color scope", &color_ntsc_red, &color_ntsc_green,
+      &color_ntsc_blue, 512, 512 },
+
+    /*
      * NG display
      * on PDP-11/45
      *
