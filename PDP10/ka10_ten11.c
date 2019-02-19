@@ -262,7 +262,11 @@ static int read_word (int addr, int *data)
   build (request, addr >> 8);
   build (request, addr);
 
-  transaction (request, response);
+  if (transaction (request, response) == -1) {
+    /* Network error. */
+    *data = 0;
+    return 0;
+  }
 
   switch (response[0])
     {
