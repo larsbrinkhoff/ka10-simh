@@ -158,6 +158,11 @@ DEVICE *sim_devices[] = {
 #if NUM_DEVS_AUXCPU > 0
     &auxcpu_dev,
 #endif
+#if NUM_DEVS_TAB > 0
+#ifdef USE_DISPLAY
+    &tab_dev,
+#endif
+#endif
     NULL
     };
 

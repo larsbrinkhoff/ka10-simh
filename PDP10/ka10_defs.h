@@ -333,6 +333,7 @@ extern DEVICE   tk10_dev;
 extern DEVICE   mty_dev;
 extern DEVICE   ten11_dev;
 extern DEVICE   auxcpu_dev;
+extern DEVICE   tab_dev;
 extern DEVICE   wcnsls_dev;             /* MIT Spacewar Consoles */
 
 extern t_stat (*dev_tab[128])(uint32 dev, uint64 *data);
@@ -412,6 +413,7 @@ int auxcpu_write (int addr, uint64);
 #define NUM_DEVS_MTY    ITS
 #define NUM_DEVS_TEN11  ITS
 #define NUM_DEVS_AUXCPU ITS
+#define NUM_DEVS_TAB    ITS
 #define NUM_DEVS_DPY    USE_DISPLAY
 #define NUM_DEVS_WCNSLS USE_DISPLAY
 #define NUM_DEVS_IMP    1
