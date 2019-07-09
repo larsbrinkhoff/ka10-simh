@@ -188,6 +188,9 @@ DEVICE *sim_devices[] = {
 #if NUM_DEVS_DPK > 0
     &dpk_dev,
 #endif
+#if NUM_DEVS_NLPT > 0
+    &nlpt_dev,
+#endif
     NULL
     };
 
