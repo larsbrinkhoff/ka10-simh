@@ -35,6 +35,7 @@
 #if (NUM_DEVS_LP > 0)
 
 #define LP_DEVNUM 0124
+#define NLPT_DEVNUM 0464
 #define STATUS   u3
 #define COL      u4
 #define POS      u5
@@ -77,14 +78,16 @@ uint8           lpt_chbuf[5];             /* Read in Character buffers */
 */
 
 DIB lpt_dib = { LP_DEVNUM, 1, &lpt_devio, NULL };
+DIB nlpt_dib = { NLPT_DEVNUM, 1, &lpt_devio, NULL };
 
-UNIT lpt_unit = {
-    UDATA (&lpt_svc, UNIT_SEQ+UNIT_ATTABLE+UNIT_TEXT, 0), 100
+UNIT lpt_unit[2] = {
+    { UDATA (&lpt_svc, UNIT_SEQ+UNIT_ATTABLE+UNIT_TEXT, 0), 100 },
+    { UDATA (&lpt_svc, UNIT_SEQ+UNIT_ATTABLE+UNIT_TEXT, 0), 100 },
     };
 
 REG lpt_reg[] = {
-    { DRDATA (STATUS, lpt_unit.STATUS, 18), PV_LEFT | REG_UNIT },
-    { DRDATA (TIME, lpt_unit.wait, 24), PV_LEFT | REG_UNIT },
+    { DRDATA (STATUS, lpt_unit[0].STATUS, 18), PV_LEFT | REG_UNIT },
+    { DRDATA (TIME, lpt_unit[0].wait, 24), PV_LEFT | REG_UNIT },
     { BRDATA(BUFF, lpt_buffer, 16, 8, sizeof(lpt_buffer)), REG_HRO},
     { BRDATA(CBUFF, lpt_chbuf, 16, 8, sizeof(lpt_chbuf)), REG_HRO},
     { NULL }
@@ -98,7 +101,7 @@ MTAB lpt_mod[] = {
 };
 
 DEVICE lpt_dev = {
-    "LPT", &lpt_unit, lpt_reg, lpt_mod,
+    "LPT", &lpt_unit[0], lpt_reg, lpt_mod,
     1, 10, 31, 1, 8, 8,
     NULL, NULL, &lpt_reset,
     NULL, &lpt_attach, &lpt_detach,
@@ -106,10 +109,19 @@ DEVICE lpt_dev = {
     NULL, NULL, &lpt_help, NULL, NULL, &lpt_description
 };
 
+DEVICE nlpt_dev = {
+    "NLPT", &lpt_unit[1], lpt_reg, lpt_mod,
+    1, 10, 31, 1, 8, 8,
+    NULL, NULL, &lpt_reset,
+    NULL, &lpt_attach, &lpt_detach,
+    &nlpt_dib, DEV_DISABLE | DEV_DEBUG, 0, dev_debug,
+    NULL, NULL, &lpt_help, NULL, NULL, &lpt_description
+};
+
 /* IOT routine */
 
 t_stat lpt_devio(uint32 dev, uint64 *data) {
-    UNIT *uptr = &lpt_unit;
+    UNIT *uptr = &lpt_unit[0];
     switch(dev & 3) {
     case CONI:
          *data = uptr->STATUS & (PI_DONE|PI_ERROR|DONE_FLG|BUSY_FLG|ERR_FLG);
@@ -130,7 +142,7 @@ t_stat lpt_devio(uint32 dev, uint64 *data) {
          if (*data & CLR_LPT) {
              uptr->STATUS &= ~DONE_FLG;
              uptr->STATUS |= BUSY_FLG;
-             sim_activate (&lpt_unit, lpt_unit.wait);
+             sim_activate (&lpt_unit[0], lpt_unit[0].wait);
          }
          if ((uptr->flags & UNIT_ATT) == 0) {
              uptr->STATUS |= ERR_FLG;
@@ -148,7 +160,7 @@ t_stat lpt_devio(uint32 dev, uint64 *data) {
              uptr->STATUS &= ~DONE_FLG;
              uptr->STATUS |= BUSY_FLG;
              clr_interrupt(dev);
-             sim_activate (&lpt_unit, lpt_unit.wait);
+             sim_activate (&lpt_unit[0], lpt_unit[0].wait);
              sim_debug(DEBUG_DATAIO, &lpt_dev, "LP DATO %012llo PC=%06o\n", *data, PC);
          }
          break;
@@ -357,13 +369,13 @@ t_stat lpt_svc (UNIT *uptr)
 
 t_stat lpt_reset (DEVICE *dptr)
 {
-    UNIT *uptr = &lpt_unit;
+    UNIT *uptr = &lpt_unit[0];
     uptr->POS = 0;
     uptr->COL = 0;
     uptr->LINE = 1;
     uptr->STATUS = DONE_FLG;
     clr_interrupt(LP_DEVNUM);
-    sim_cancel (&lpt_unit);                                 /* deactivate unit */
+    sim_cancel (&lpt_unit[0]);                                 /* deactivate unit */
     return SCPE_OK;
 }
 
