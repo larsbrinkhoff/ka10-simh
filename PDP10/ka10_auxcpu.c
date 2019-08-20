@@ -144,7 +144,6 @@ static t_stat auxcpu_attach (UNIT *uptr, CONST char *cptr)
     return r;
   sim_debug(DBG_TRC, &auxcpu_dev, "activate connection\n");
   sim_activate (uptr, 10);    /* start poll */
-  uptr->flags |= UNIT_ATT;
   return SCPE_OK;
 }
 
@@ -156,8 +155,6 @@ static t_stat auxcpu_detach (UNIT *uptr)
     return SCPE_OK;
   sim_cancel (uptr);
   r = tmxr_detach (&auxcpu_desc, uptr);
-  uptr->flags &= ~UNIT_ATT;
-  free (uptr->filename);
   uptr->filename = NULL;
   return r;
 }
@@ -299,7 +296,7 @@ int auxcpu_write (int addr, t_uint64 data)
 
   sim_interval -= AUXCPU_MEM_CYCLE;
 
-  if ((ten11_unit[0].flags & UNIT_ATT) == 0) {
+  if ((auxcpu_unit[0].flags & UNIT_ATT) == 0) {
       return 0;
   }
 
