@@ -382,6 +382,7 @@ extern DEVICE   dtc_dev;
 extern DEVICE   mtc_dev;
 extern DEVICE   dsk_dev;
 extern DEVICE   dcs_dev;
+extern DEVICE   slave_dev;
 
 extern t_stat (*dev_tab[128])(uint32 dev, t_uint64 *data);
 
@@ -457,6 +458,7 @@ int auxcpu_write (int addr, t_uint64);
 #define NUM_DEVS_MTC    1
 #define NUM_DEVS_DSK    1
 #define NUM_DEVS_DCS    1
+#define NUM_DEVS_SLAVE  PDP6
 #endif
 #if !PDP6
 #define NUM_DEVS_DC     1
