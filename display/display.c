@@ -238,6 +238,18 @@ static struct display displays[] = {
     { DIS_TYPE340, "Type 340", &color_p7, NULL, 1024, 1024 },
 
     /*
+     * Evans&Sutherland LDS-1 Display system
+     * on PDP-10
+     *
+     * Raytheon 16ADP7A CRT, same as Type 30
+     * 1024x1024
+     * 9 3/8" raster (.01" dot pitch)
+     * 0,0 at lower left
+     * 8 intensity levels
+     */
+    { DIS_LDS1, "LDS-1", &color_p7, NULL, 1024, 1024 },
+
+    /*
      * NG display
      * on PDP-11/45
      *

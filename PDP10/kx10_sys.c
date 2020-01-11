@@ -171,6 +171,9 @@ DEVICE *sim_devices[] = {
 #if (NUM_DEVS_III > 0)
     &iii_dev,
 #endif
+#if (NUM_DEVS_LDS1 > 0)
+    &lds1_dev,
+#endif
 #if NUM_DEVS_IMP > 0
     &imp_dev,
 #endif

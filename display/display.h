@@ -43,6 +43,7 @@ enum display_type {
      */
     DIS_TX0 = 0,
     DIS_IMLAC = 1,
+    DIS_LDS1 = 2,
     DIS_VR14 = 14,
     DIS_VR17 = 17,
     DIS_VR20 = 20,

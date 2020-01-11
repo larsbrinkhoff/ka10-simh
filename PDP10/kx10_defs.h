@@ -451,6 +451,7 @@ extern DEVICE   pd_dev;
 extern DEVICE   pclk_dev;
 extern DEVICE   dpy_dev;
 extern DEVICE   iii_dev;
+extern DEVICE   lds1_dev;
 extern DEVICE   imx_dev;
 extern DEVICE   imp_dev;
 extern DEVICE   ch10_dev;
@@ -589,6 +590,7 @@ extern void ka10_lights_clear_aux (int);
 #define NUM_DEVS_DPY    USE_DISPLAY
 #define NUM_DEVS_WCNSLS USE_DISPLAY
 #define NUM_DEVS_OCNSLS USE_DISPLAY
+#define NUM_DEVS_LDS1   USE_DISPLAY
 #if PDP6_DEV
 #define NUM_DEVS_DTC    1
 #define NUM_DEVS_DCT    2
