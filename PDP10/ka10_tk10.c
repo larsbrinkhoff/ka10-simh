@@ -1,6 +1,6 @@
 /* ka10_tk10.c: Knight kludge, TTY scanner.
 
-   Copyright (c) 2018, Lars Brinkhoff
+   Copyright (c) 2018, 2020, Lars Brinkhoff
 
    Permission is hereby granted, free of charge, to any person obtaining a
    copy of this software and associated documentation files (the "Software"),
@@ -54,7 +54,8 @@
                           TK10_ODONE | TK10_IDONE)
 
 static t_stat       tk10_devio(uint32 dev, uint64 *data);
-static t_stat       tk10_svc (UNIT *uptr);
+static t_stat       tk10_input_svc (UNIT *uptr);
+static t_stat       tk10_output_svc (UNIT *uptr);
 static t_stat       tk10_reset (DEVICE *dptr);
 static t_stat       tk10_attach (UNIT *uptr, CONST char *cptr);
 static t_stat       tk10_detach (UNIT *uptr);
@@ -63,13 +64,17 @@ static t_stat       tk10_help (FILE *st, DEVICE *dptr, UNIT *uptr,
                                int32 flag, const char *cptr);
 extern int32        tmxr_poll;
 
+static int32        tk10_input_character;
+static int32        tk10_output_character[TK10_LINES];
+
 TMLN tk10_ldsc[TK10_LINES] = { 0 };
 TMXR tk10_desc = { TK10_LINES, 0, 0, tk10_ldsc };
 
 static uint64 status = 0;
 
 UNIT                tk10_unit[] = {
-    {UDATA(tk10_svc, TT_MODE_7B|UNIT_IDLE|UNIT_ATTABLE, 0)},  /* 0 */
+    {UDATA(tk10_input_svc, TT_MODE_7B|UNIT_IDLE|UNIT_ATTABLE, 0)},
+    {UDATA(tk10_output_svc, UNIT_DIS|UNIT_IDLE, 0)},
 };
 DIB tk10_dib = {TK10_DEVNUM, 1, &tk10_devio, NULL};
 
@@ -90,7 +95,7 @@ MTAB tk10_mod[] = {
 
 DEVICE tk10_dev = {
     TK10_NAME, tk10_unit, NULL, tk10_mod,
-    1, 8, 0, 1, 8, 36,
+    2, 8, 0, 1, 8, 36,
     NULL, NULL, tk10_reset, NULL, tk10_attach, tk10_detach,
     &tk10_dib, DEV_DISABLE | DEV_DIS | DEV_DEBUG, 0, dev_debug,
     NULL, NULL, tk10_help, NULL, NULL, tk10_description
@@ -141,21 +146,18 @@ static t_stat tk10_devio(uint32 dev, uint64 *data)
         port = (status & TK10_TYO) >> 12;
         sim_debug(DEBUG_DATAIO, &tk10_dev, "DATAO port %d -> %012llo\n",
                   port, *data);
-        if (tk10_ldsc[port].conn) {
-            lp = &tk10_ldsc[port];
-            ch = sim_tt_outcvt(*data & 0377, TT_GET_MODE (tk10_unit[0].flags));
-            tmxr_putc_ln (lp, ch);
-        }
+        tk10_output_character[port] = *data & 0177;
         status &= ~TK10_ODONE;
         if (!(status & TK10_IDONE)) {
             status &= ~TK10_INT;
             status |= TK10_GO;
         }
+        sim_activate_abs (&tk10_unit[1], 0);
         break;
     case DATAI:
-        port = (status & TK10_TYO) >> 12;
+        port = (status & TK10_TYI) >> 8;
         lp = &tk10_ldsc[port];
-        *data = tmxr_getc_ln (lp);
+        *data = tk10_input_character;
         sim_debug(DEBUG_DATAIO, &tk10_dev, "DATAI port %d -> %012llo\n",
                   port, *data);
         status &= ~TK10_IDONE;
@@ -163,6 +165,7 @@ static t_stat tk10_devio(uint32 dev, uint64 *data)
             status &= ~TK10_INT;
             status |= TK10_GO;
         }
+        sim_activate_abs (&tk10_unit[0], 0);
         break;
     }
 
@@ -174,9 +177,10 @@ static t_stat tk10_devio(uint32 dev, uint64 *data)
     return SCPE_OK;
 }
 
-static t_stat tk10_svc (UNIT *uptr)
+static t_stat tk10_input_svc (UNIT *uptr)
 {
     static int scan = 0;
+    int32 ch;
     int i;
 
     /* Slow hardware only supported 300 baud teletypes. */
@@ -184,7 +188,6 @@ static t_stat tk10_svc (UNIT *uptr)
 
     i = tmxr_poll_conn (&tk10_desc);
     if (i >= 0) {
-        tk10_ldsc[i].conn = 1;
         tk10_ldsc[i].rcve = 1;
         tk10_ldsc[i].xmte = 1;
         sim_debug(DEBUG_CMD, &tk10_dev, "Connect %d\n", i);
@@ -197,40 +200,67 @@ static t_stat tk10_svc (UNIT *uptr)
 #endif
 
     tmxr_poll_rx (&tk10_desc);
-    tmxr_poll_tx (&tk10_desc);
 
     for (i = 0; i < TK10_LINES; i++) {
         /* Round robin scan 16 lines. */
         scan = (scan + 1) & 017;
 
-        /* 1 means the line became ready since the last check.  Ignore
-           -1 which means "still ready". */
-        if (tmxr_txdone_ln (&tk10_ldsc[scan]) == 1) {
-            sim_debug(DEBUG_DETAIL, &tk10_dev, "Output ready port %d\n", scan);
-            status &= ~TK10_TYI;
-            status |= scan << 8;
-            status |= TK10_INT;
-            status &= ~TK10_GO;
-            status |= TK10_ODONE;
-            set_interrupt(TK10_DEVNUM, status & TK10_PIA);
-            break;
-        }
-
-        if (!tk10_ldsc[scan].conn)
-            continue;
-
-        if (tmxr_input_pending_ln (&tk10_ldsc[scan])) {
+        ch = tmxr_getc_ln (&tk10_ldsc[scan]);
+        if (ch & TMXR_VALID) {
             sim_debug(DEBUG_DETAIL, &tk10_dev, "Input ready port %d\n", scan);
+            tk10_input_character = ch & 0177;
             status &= ~TK10_TYI;
             status |= scan << 8;
             status |= TK10_INT;
             status &= ~TK10_GO;
             status |= TK10_IDONE;
             set_interrupt(TK10_DEVNUM, status & TK10_PIA);
+
+            /* No more scanning until DATAI has read this character. */
+            sim_cancel (&tk10_unit[0]);
             break;
         }
     }
 
+    return SCPE_OK;
+}
+    
+static t_stat tk10_output_svc (UNIT *uptr)
+{
+    static int scan = 0;
+    int32 txdone;
+    int i, ch;
+    t_stat r;
+
+    for (i = 0; i < TK10_LINES; i++) {
+        /* Round robin scan 16 lines. */
+        scan = (scan + 1) & 017;
+
+        if (tmxr_txdone_ln (&tk10_ldsc[scan])) {
+            if (tk10_output_character[scan] != -1) {
+                ch = sim_tt_outcvt(tk10_output_character[scan],
+                                   TT_GET_MODE (tk10_unit[0].flags));
+                r = tmxr_putc_ln (&tk10_ldsc[scan], ch);
+                sim_debug(DEBUG_DETAIL, &tk10_dev, "Output %03o to port %d, result %d\n", ch, scan, r);
+                if (r != SCPE_STALL) {
+                    tk10_output_character[scan] = -1;
+                    sim_debug(DEBUG_DETAIL, &tk10_dev, "Output ready port %d\n", scan);
+                    status &= ~TK10_TYO;
+                    status |= scan << 12;
+                    status |= TK10_INT;
+                    status &= ~TK10_GO;
+                    status |= TK10_ODONE;
+                    set_interrupt(TK10_DEVNUM, status & TK10_PIA);
+
+                    /* No more scanning until DATAO has read this character. */
+                    //sim_cancel (&tk10_unit[1]);
+                    //return SCPE_OK;
+                }
+            }
+        }
+    }
+
+    sim_activate_after (uptr, 100);
     return SCPE_OK;
 }
 
@@ -239,17 +269,20 @@ static t_stat tk10_reset (DEVICE *dptr)
     int i;
 
     sim_debug(DEBUG_CMD, &tk10_dev, "Reset\n");
-    if (tk10_unit->flags & UNIT_ATT)
-        sim_activate (tk10_unit, tmxr_poll);
-    else
-        sim_cancel (tk10_unit);
+    if (tk10_unit[0].flags & UNIT_ATT)
+        sim_activate_abs (&tk10_unit[0], 0);
+    else {
+        sim_cancel (&tk10_unit[0]);
+        sim_cancel (&tk10_unit[1]);
+    }
 
     status = 0;
     clr_interrupt(TK10_DEVNUM);
 
     for (i = 0; i < TK10_LINES; i++) {
-        tmxr_set_line_unit (&tk10_desc, i, tk10_unit);
-        tmxr_set_line_output_unit (&tk10_desc, i, tk10_unit);
+        tk10_output_character[i] = -1;
+        tmxr_set_line_unit (&tk10_desc, i, &tk10_unit[0]);
+        tmxr_set_line_output_unit (&tk10_desc, i, &tk10_unit[1]);
     }
 
     return SCPE_OK;
@@ -267,7 +300,7 @@ static t_stat tk10_attach (UNIT *uptr, CONST char *cptr)
     }
     if (stat == SCPE_OK) {
         status = TK10_GO;
-        sim_activate (uptr, tmxr_poll);
+        sim_activate_abs (uptr, 0);
     }
     return stat;
 }
