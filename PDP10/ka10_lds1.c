@@ -49,14 +49,7 @@
  */
 #define LDS1_CYCLE_US    50
 
-/*
- * number of LDS1_CYCLES to delay int
- * too small and host CPU doesn't run enough!
- */
-#define INT_COUNT       (500/LDS1_CYCLE_US)
-
 #define STAT_REG        u3
-#define INT_COUNTDOWN   u4
 #define XPOS            us9             /* from LP hit */
 #define YPOS            us10            /* from LP hit */
 
@@ -137,24 +130,13 @@ DEVICE lds1_dev = {
     NUM_DEVS_LDS1, 0, 0, 0, 0, 0,
     NULL, NULL, lds1_reset,
     NULL, NULL, NULL,
-    &lds1_dib, DEV_DISABLE | DEV_DIS | DEV_DEBUG, 0, NULL,      
+    &lds1_dib, DEV_DISABLE | DEV_DIS | DEV_DEBUG, 0, dev_debug,
     NULL, NULL, NULL, NULL, NULL, &lds1_description
     };
 
 const char *lds1_description (DEVICE *dptr)
 {
     return "Evans&Sutherland LDS-1";
-}
-
-/* return true if display not stopped */
-int lds1_update_status (UNIT *uptr, lds1word status, int done)
-{
-    int running = 1;
-
-    /* data interrupt sent from svc routine, so CPU can run */
-    if (done && running) {
-    }
-    return running;
 }
 
 static void lds1_push (uint64 reg, uint64 mode)
@@ -226,14 +208,32 @@ static void lds1_group_2 (uint64 word)
 
 static void lds1_group_3 (uint64 word)
 {
+  int f1 = (word >> 31) & 3;
+  int dev = (word >> 27) & 017;
+  int reg = (word >> 23) & 017;
+  int i = (word >> 22) & 1;
+  int count = (word >> 18) & 017;
+  int address = word & LMASK;
+
+  if (i == 0) {
+    if (f1 & 2)
+      CC_DSP = address;
+    else
+      CC_RAR = address;
+  }
 }
 
-static void lds1_group_4567 (uint64 word)
+static void lds1_group_456 (uint64 word)
+{
+}
+
+static void lds1_group_7 (uint64 word)
 {
 }
 
 static void lds1_insn (uint64 word)
 {
+  sim_debug (DEBUG_DETAIL, &lds1_dev, "Instruction: %012llo\n", word);
   switch ((word >> 33) & 7) {
   case 0: lds1_group_0 (word); break;
   case 1: lds1_group_1 (word); break;
@@ -241,8 +241,8 @@ static void lds1_insn (uint64 word)
   case 3: lds1_group_3 (word); break;
   case 4:
   case 5:
-  case 6:
-  case 7: lds1_group_4567 (word); break;
+  case 6: lds1_group_456 (word); break;
+  case 7: lds1_group_7 (word); break;
   }
 }
 
@@ -254,39 +254,52 @@ t_stat lds1_devio(uint32 dev, uint64 *data) {
         return SCPE_OK;
     uptr = UPTR(unit);
 
-    if (!(uptr->STAT_REG & STAT_VALID)) {
-        lds1_update_status(uptr, 0, 0);
-        sim_activate_after(uptr, LDS1_CYCLE_US);
-        uptr->STAT_REG |= STAT_VALID;
-        uptr->INT_COUNTDOWN = 0;
-    }
-
     switch (dev & 3) {
     case CONI:
         *data = (uint64)0;
-        sim_debug(DEBUG_CONI, &lds1_dev, "%012llo PC=%06o\n",
-                  *data, PC);
+        sim_debug (DEBUG_CONI, &lds1_dev, "%012llo PC=%06o\n",
+                   *data, PC);
         break;
 
     case CONO:
         clr_interrupt(dev);
         sim_debug(DEBUG_CONO, &lds1_dev, "%012llo PC=%06o\n",
                   *data, PC);
-        if (!sim_is_active(uptr))
-            sim_activate_after(uptr, LDS1_CYCLE_US);
+        if (*data & CONO_ALL_PIA)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Allow PIA.\n");
+        if (*data & CONO_STEP)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Step.\n");
+        if (*data & CONO_CL_HIT)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Clear hit.\n");
+        if (*data & CONO_CL_P_STOP)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Clear program stop.\n");
+        if (*data & CONO_CL_IO_STOP)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Clear IO stop.\n");
+        if (*data & CONO_DIS_STOP)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Disallow stop interrupt.\n");
+        if (*data & CONO_ALL_STOP)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Allow stop interrupt.\n");
+        if (*data & CONO_SET_IO_STOP)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Set IO stop.\n");
+        if (*data & CONO_DIS_MAP)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Disallow map interrupt.\n");
+        if (*data & CONO_ALL_MAP)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Allow map interrupt.\n");
+        if (*data & CONO_ENA_MEM)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Enable memory protection.\n");
+        if (*data & CONO_DIS_MEM)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Disable memory protection.\n");
+        if (*data & CONO_ALL_MEM)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "Allow protection interrupt.\n");
+        if (*data & CONO_CLEAR)
+            sim_debug (DEBUG_DETAIL, &lds1_dev, "System clear.\n");
         break;
 
     case DATAO:
-        uptr->INT_COUNTDOWN = 0;
         sim_debug(DEBUG_DATAIO, &lds1_dev, "DATAO %012llo PC=%06o\n",
                   *data, PC);
         
         lds1_insn (*data);
-
-        if (lds1_update_status(uptr, lds1_instruction(*data), 0)) {
-        }
-        if (!sim_is_active(uptr))
-            sim_activate_after(uptr, LDS1_CYCLE_US);
         break;
 
     case DATAI:
@@ -301,16 +314,11 @@ t_stat lds1_devio(uint32 dev, uint64 *data) {
 /* Timer service - */
 t_stat lds1_svc (UNIT *uptr)
 {
-    if (!display_is_blank() || uptr->INT_COUNTDOWN > 0)
-        sim_activate_after(uptr, LDS1_CYCLE_US); /* requeue! */
-
     display_age(LDS1_CYCLE_US, 0);       /* age the display */
 
     lds1_insn (CC_PC);
     CC_PC++;
 
-    if (uptr->INT_COUNTDOWN && --uptr->INT_COUNTDOWN == 0) {
-    }
     return SCPE_OK;
 }
 
