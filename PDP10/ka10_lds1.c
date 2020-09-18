@@ -299,7 +299,9 @@ t_stat lds1_devio(uint32 dev, uint64 *data) {
         sim_debug(DEBUG_DATAIO, &lds1_dev, "DATAO %012llo PC=%06o\n",
                   *data, PC);
         
+        status &= CONI_READY;
         lds1_insn (*data);
+        status |= CONI_READY;
         break;
 
     case DATAI:
