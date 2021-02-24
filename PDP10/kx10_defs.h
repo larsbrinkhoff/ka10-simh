@@ -496,6 +496,8 @@ extern DEVICE   pd_dev;
 extern DEVICE   pclk_dev;
 extern DEVICE   dpy_dev;
 extern DEVICE   iii_dev;
+extern DEVICE   dd_dev;
+extern DEVICE   vds_dev;
 extern DEVICE   imx_dev;
 extern DEVICE   imp_dev;
 extern DEVICE   ch10_dev;
@@ -757,6 +759,7 @@ extern void ka10_lights_clear_aux (int);
 #define NUM_DEVS_DKB    (WAITS * USE_DISPLAY)
 #define NUM_DEVS_III    (WAITS * USE_DISPLAY)
 #define NUM_DEVS_TV     (WAITS * USE_DISPLAY)
+#define NUM_DEVS_DD     (WAITS * USE_DISPLAY)
 #define NUM_DEVS_PD     ITS
 #define NUM_DEVS_PCLK   WAITS
 #define NUM_DEVS_IMX    ITS
@@ -807,6 +810,9 @@ extern UNIT     auxcpu_unit[];
 //int slave_read (t_addr addr);
 //int slave_write (t_addr addr, uint64);
 //extern UNIT     slave_unit[];
+#endif
+#if NUM_DEVS_DD
+extern uint32 dd_keyboard_line (void *);
 #endif
 
 #endif
