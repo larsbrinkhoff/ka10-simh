@@ -120,7 +120,7 @@ static t_stat auxcpu_reset (DEVICE *dptr)
   auxcpu_desc.buffered = 2048;
 
   if (auxcpu_unit[0].flags & UNIT_ATT)
-    sim_activate (&auxcpu_unit[0], 1000);
+    sim_activate (&auxcpu_unit[0], 1);
   else
     sim_cancel (&auxcpu_unit[0]);
 
@@ -139,7 +139,7 @@ static t_stat auxcpu_attach (UNIT *uptr, CONST char *cptr)
   if (r != SCPE_OK)                                       /* error? */
     return r;
   sim_debug(DBG_TRC, &auxcpu_dev, "activate connection\n");
-  sim_activate (uptr, 10);    /* start poll */
+  sim_activate (uptr, 1);    /* start poll */
   return SCPE_OK;
 }
 
@@ -164,10 +164,12 @@ static void build (unsigned char *request, unsigned char octet)
 static t_stat auxcpu_svc (UNIT *uptr)
 {
   tmxr_poll_rx (&auxcpu_desc);
+#if 0
   if (auxcpu_ldsc.rcve && !auxcpu_ldsc.conn) {
     auxcpu_ldsc.rcve = 0;
     tmxr_reset_ln (&auxcpu_ldsc);
   }
+#endif
 
   /* If incoming interrput => uptr->STATUS |= 010 */
   if (uptr->STATUS & 010)
@@ -229,6 +231,8 @@ static int transaction (unsigned char *request, unsigned char *response)
     return error ("Write error in transaction");
 
   do {
+    sim_debug(DBG_TRC, &auxcpu_dev, "Poll\n");
+    tmxr_poll_tx (&auxcpu_desc);
     tmxr_poll_rx (&auxcpu_desc);
     stat = tmxr_get_packet_ln (&auxcpu_ldsc, &auxcpu_request, &size);
   } while (stat != SCPE_OK || size == 0);
@@ -244,6 +248,9 @@ int auxcpu_read (t_addr addr, uint64 *data)
 {
   unsigned char request[12];
   unsigned char response[12];
+
+  if (!auxcpu_ldsc.conn)
+    return 0;
 
   addr &= 037777;
 
@@ -284,6 +291,9 @@ int auxcpu_write (t_addr addr, uint64 data)
 {
   unsigned char request[12];
   unsigned char response[12];
+
+  if (!auxcpu_ldsc.conn)
+    return 0;
 
   addr &= 037777;
 

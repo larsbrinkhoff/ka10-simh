@@ -120,7 +120,7 @@ static t_stat slave_reset (DEVICE *dptr)
   slave_desc.buffered = 2048;
 
   if (slave_unit[0].flags & UNIT_ATT)
-    sim_activate (&slave_unit[0], 1000);
+    sim_activate (&slave_unit[0], 1);
   else
     sim_cancel (&slave_unit[0]);
 
@@ -139,7 +139,7 @@ static t_stat slave_attach (UNIT *uptr, CONST char *cptr)
   if (r != SCPE_OK)                                       /* error? */
     return r;
   sim_debug(DEBUG_TRC, &slave_dev, "activate connection\n");
-  sim_activate (uptr, 10);    /* start poll */
+  sim_activate (uptr, 1);
   return SCPE_OK;
 }
 
@@ -252,11 +252,13 @@ static t_stat slave_svc (UNIT *uptr)
   }
 
   tmxr_poll_rx (&slave_desc);
+#if 0
   if (slave_ldsc.rcve && !slave_ldsc.conn) {
     slave_ldsc.rcve = 0;
     tmxr_reset_ln (&slave_ldsc);
     sim_debug(DEBUG_CMD, &slave_dev, "reset\n");
   }
+#endif
 
   if (tmxr_get_packet_ln (&slave_ldsc, &slave_request, &size) == SCPE_OK)
     process_request (uptr, slave_request, size);
