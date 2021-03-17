@@ -177,6 +177,9 @@ DEVICE *sim_devices[] = {
 #if (NUM_DEVS_TV > 0)
     &tv_dev,
 #endif
+#if (NUM_DEVS_DDC > 0)
+    &ddc_dev,
+#endif
 #if NUM_DEVS_IMP > 0
     &imp_dev,
 #endif
@@ -258,6 +261,7 @@ DEBTAB              dev_debug[] = {
     {"CONI", DEBUG_CONI, "Show coni instructions"},
     {"CONO", DEBUG_CONO, "Show cono instructions"},
     {"DATAIO", DEBUG_DATAIO, "Show datai and datao instructions"},
+    {"IRQ", DEBUG_IRQ, "Debug IRQ requests"},
     {0, 0}
 };
 

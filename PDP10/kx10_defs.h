@@ -81,6 +81,11 @@
 #define WAITS KA
 #endif
 
+/* Support for TENEX mods */
+#ifndef TENEX
+#define TENEX KI
+#endif
+
 /* Support for ITS on KL */
 #ifndef KL_ITS
 #define KL_ITS KL
@@ -500,6 +505,7 @@ extern DEVICE   pd_dev;
 extern DEVICE   pclk_dev;
 extern DEVICE   dpy_dev;
 extern DEVICE   iii_dev;
+extern DEVICE   ddc_dev;
 extern DEVICE   imx_dev;
 extern DEVICE   imp_dev;
 extern DEVICE   ch10_dev;
@@ -783,6 +789,9 @@ extern void ka10_lights_clear_aux (int);
 #define NUM_DEVS_CH10   ITS
 #define NUM_DEVS_DPK    ITS
 #define NUM_DEVS_AI     ITS
+#endif
+#if KI
+#define NUM_DEVS_DDC    TENEX
 #endif
 #if KL_ITS
 #define NUM_DEVS_PD     KL_ITS
