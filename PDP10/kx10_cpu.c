@@ -139,6 +139,7 @@ int     mem_prot;                             /* Memory protection flag */
 #endif
 int     nxm_flag;                             /* Non-existant memory flag */
 int     clk_flg;                              /* Clock flag */
+int     clk_counter;
 int     ov_irq;                               /* Trap overflow */
 int     fov_irq;                              /* Trap floating overflow */
 #if PDP6
@@ -9694,7 +9695,7 @@ test_op:
                            case 013:            /* WRCSTM */   /* ITS LDBR4 */
 #if KS_ITS
                                  if (QITS) {
-                                    dbr3 = AR;
+                                    dbr4 = AR;
                                     sim_debug(DEBUG_CONI, &cpu_dev, "WRSPD %012llo\n", dbr4);
                                     break;
                                  }
@@ -11757,6 +11758,7 @@ rtc_srv(UNIT * uptr)
     tmxr_poll = t/2;
 #if PDP6 | KA | KI
     clk_flg = 1;
+    clk_counter++;
     if (clk_en) {
         sim_debug(DEBUG_CONO, &cpu_dev, "CONO timmer\n");
         set_interrupt(4, clk_irq);
@@ -11844,6 +11846,7 @@ page_enable = 0;
 #endif
 #endif
 nxm_flag = clk_flg = 0;
+clk_counter = 9;
 PIR = PIH = PIE = pi_enable = parity_irq = 0;
 pi_pending = pi_enc = apr_irq = 0;
 ov_irq =fov_irq =clk_en =clk_irq = 0;

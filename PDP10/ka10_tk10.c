@@ -49,6 +49,15 @@
 #define TK10_SELECT      0400000 /* Select line. */
 #define TK10_GO          0 /* 0400000 Scanning. */
 
+/* Dialers. */
+#define TK_DIAL0_SHIFT   6
+#define TK_DIAL1_SHIFT   9
+#define TK_DIAL0_LINE    7
+#define TK_DIAL1_LINE    6
+#define TK10_D1          4
+#define TK10_D2          2
+#define TK10_D3          1
+
 #define TK10_CONI_BITS   (TK10_PIA | TK10_INT | TK10_TYI | TK10_GO | \
                           TK10_ODONE | TK10_IDONE)
 
@@ -95,6 +104,23 @@ DEVICE tk10_dev = {
     NULL, NULL, tk10_help, NULL, NULL, tk10_description
 };
 
+static int dial0_last = -1;
+static int dial1_last = -1;
+
+static void tk10_dial (int line, int frob, int *last)
+{
+    extern int clk_counter;
+    int delta;
+
+    if (frob == 0)
+        return;
+
+    delta = clk_counter - *last;
+    *last = clk_counter;
+    sim_debug(DEBUG_CMD, &tk10_dev, "Line %d dialer got %o, delta %d\n",
+              line, frob, delta);
+}
+
 static t_stat tk10_devio(uint32 dev, uint64 *data)
 {
     TMLN *lp;
@@ -130,6 +156,8 @@ static t_stat tk10_devio(uint32 dev, uint64 *data)
         }
         status &= ~TK10_PIA;
         status |= *data & TK10_PIA;
+        tk10_dial (TK_DIAL0_LINE, ((*data >> TK_DIAL0_SHIFT) & 7), &dial0_last);
+        tk10_dial (TK_DIAL1_LINE, ((*data >> TK_DIAL1_SHIFT) & 7), &dial1_last);
         break;
     case CONI:
         *data = status & TK10_CONI_BITS;
