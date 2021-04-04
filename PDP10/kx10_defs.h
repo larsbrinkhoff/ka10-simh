@@ -518,6 +518,7 @@ extern DEVICE   mtc_dev;
 extern DEVICE   dsk_dev;
 extern DEVICE   dcs_dev;
 extern DEVICE   dz_dev;
+extern DEVICE   crt_dev;
 
 #if KS
 
@@ -782,6 +783,9 @@ extern void ka10_lights_clear_aux (int);
 #if MAGIC_SWITCH && !KA && !ITS
 #error "Magic switch only valid on KA10 with ITS mods"
 #endif
+#if NUM_DEVS_DPY || NUM_DEVS_III
+#define NUM_DEVS_CRT 1
+#endif
 
 /* Global data */
 
@@ -805,6 +809,11 @@ extern UNIT     auxcpu_unit[];
 //int slave_read (t_addr addr);
 //int slave_write (t_addr addr, uint64);
 //extern UNIT     slave_unit[];
+#endif
+#if NUM_DEVS_CRT
+extern void crt_info (void (*) (int));
+extern void crt_point (int line, int x, int y);
+extern void crt_line (int line, int x1, int y1, int x2, int y2);
 #endif
 
 #endif
