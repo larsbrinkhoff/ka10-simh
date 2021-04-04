@@ -313,7 +313,6 @@ DIB iii_dib = { III_DEVNUM, 1, iii_devio, NULL};
 
 UNIT iii_unit[] = {
     {UDATA (&iii_svc, 0, 0) },
-    { 0 }
     };
 
 
@@ -323,7 +322,7 @@ MTAB iii_mod[] = {
 
 DEVICE iii_dev = {
     "III", iii_unit, NULL, iii_mod,
-    2, 10, 31, 1, 8, 8,
+    1, 10, 31, 1, 8, 8,
     NULL, NULL, iii_reset,
     NULL, NULL, NULL, &iii_dib, DEV_DEBUG | DEV_DISABLE | DEV_DIS | DEV_DISPLAY, 0, dev_debug,
     NULL, NULL, &iii_help, NULL, NULL, &iii_description
@@ -461,7 +460,7 @@ iii_svc (UNIT *uptr)
                       continue;
                    }
                    /* Scan map and draw lines as needed */
-                   if ((iii_sel & 04000) != 0) {
+                   if (1) {
                        for(j = 0; j < 18; j++) {
                           uint8 v = map[ch][j];
                           if (v == 0)
@@ -485,7 +484,7 @@ iii_svc (UNIT *uptr)
                break;
 
      case 002: /* Short Vector */
-               if ((iii_sel & 04000) == 0)
+               if (1)
                   break;
                /* Do first point */
                nx = (iii_instr >> 26) & 077;
@@ -501,7 +500,7 @@ iii_svc (UNIT *uptr)
                if (nx < MIN_X || nx > MAX_X || ny < MIN_Y || ny > MAX_Y)
                    uptr->STATUS |= EDG_FBIT;
                i = (int)((iii_instr >> 18) & 3);
-               if ((i & 02) == 0 && (iii_sel & 04000) != 0) { /* Check if visible */
+               if ((i & 02) == 0 && 1) { /* Check if visible */
                    if ((i & 01) == 0) { /* Draw a line */
                       draw_line(ox, oy, nx, ny, br, uptr);
                    } else {
@@ -524,7 +523,7 @@ iii_svc (UNIT *uptr)
                if (nx < MIN_X || nx > MAX_X || ny < MIN_Y || ny > MAX_Y)
                    uptr->STATUS |= EDG_FBIT;
                /* Check if visible */
-               if ((iii_instr & 040) == 0 && (iii_sel & 04000) != 0) {
+               if ((iii_instr & 040) == 0 && 1) {
                    if ((iii_instr & 020) == 0) { /* Draw a line */
                       draw_line(ox, oy, nx, ny, br, uptr);
                    } else {
@@ -570,7 +569,7 @@ iii_svc (UNIT *uptr)
                        uptr->STATUS |= EDG_FBIT;
                }
                /* Check if visible */
-               if ((iii_instr & 040) == 0 && (iii_sel & 04000) != 0) {
+               if ((iii_instr & 040) == 0 && 1) {
                    if ((iii_instr & 020) == 0) /* Draw a line */
                       draw_line(ox, oy, nx, ny, br, uptr);
                    else
@@ -585,6 +584,7 @@ iii_svc (UNIT *uptr)
                i &= ~ch;
                j &= ~ch;
                iii_sel = ((iii_sel | i) & ~j) ^ ch;
+               sim_debug (DEBUG_DETAIL, &iii_dev, "Select %04o\n", iii_sel);
                goto skip_up;
 
      case 012: /* Test instruction */
@@ -658,20 +658,32 @@ t_stat iii_reset (DEVICE *dptr)
 static void
 draw_point(int x, int y, int b, UNIT *uptr)
 {
+   int i, j;
    if (x < MIN_X || x > MAX_X || y < MIN_Y || y > MAX_X)
        uptr->STATUS |= WRP_FBIT;
-   display_point(x - MIN_X, y - MIN_Y, b, 0);
+   if (iii_sel & 04000)
+       display_point(x - MIN_X, y - MIN_Y, b, 0);
+   for (i = 0, j = 04000; i < 12; i++, j >>= 1) {
+       if (iii_sel & j)
+           crt_point (i, x + 512, 522 - y);
+   }
 }
 
 /* Draw a line between two points */
 static void
 draw_line(int x1, int y1, int x2, int y2, int b, UNIT *uptr)
 {
+    int i, j;
     if (x1 < MIN_X || x1 > MAX_X || y1 < MIN_Y || y1 > MAX_Y)
        uptr->STATUS |= WRP_FBIT;
     if (x2 < MIN_X || x2 > MAX_X || y2 < MIN_Y || y2 > MAX_Y)
        uptr->STATUS |= WRP_FBIT;
-    display_line(x1 - MIN_X, y1 - MIN_Y, x2 - MIN_X, y2 - MIN_Y, b);
+    if (iii_sel & 04000)
+       display_line(x1 - MIN_X, y1 - MIN_Y, x2 - MIN_X, y2 - MIN_Y, b);
+    for (i = 0, j = 04000; i < 12; i++, j >>= 1) {
+       if (iii_sel & j)
+          crt_line (i, x1 + 512, 522 - y1, x2 + 512, 522 - y2);
+    }
 }
 
 t_stat iii_help (FILE *st, DEVICE *dptr, UNIT *uptr, int32 flag, const char *cptr)
