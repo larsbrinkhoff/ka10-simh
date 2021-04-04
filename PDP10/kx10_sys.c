@@ -250,6 +250,9 @@ DEVICE *sim_devices[] = {
     &ge_dev,
     &gtyo_dev,
 #endif
+#if (NUM_DEVS_III > 0) || (NUM_DEVS_DPY > 0)
+    &crt_dev,
+#endif
     NULL
     };
 

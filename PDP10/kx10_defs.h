@@ -544,6 +544,7 @@ extern DEVICE   ddc_dev;
 extern DEVICE   tym_dev;
 extern DEVICE   ge_dev;
 extern DEVICE   gtyo_dev;
+extern DEVICE   crt_dev;
 
 #if KS
 
@@ -819,6 +820,9 @@ extern void ka10_lights_clear_aux (int);
 #if KI
 #define NUM_DEVS_TYM    1
 #endif
+#if NUM_DEVS_DPY || NUM_DEVS_III
+#define NUM_DEVS_CRT 1
+#endif
 
 /* Global data */
 
@@ -859,6 +863,12 @@ extern uint32 dd_keyboard_line (void *);
 #if PIDP10
 t_stat pi_panel_start();
 void pi_panel_stop();
+#endif
+
+#if NUM_DEVS_CRT
+extern void crt_info (void (*) (int));
+extern void crt_point (int line, int x, int y);
+extern void crt_line (int line, int x1, int y1, int x2, int y2);
 #endif
 
 #endif
