@@ -799,6 +799,10 @@ display_point(int x,        /* 0..xpixels (unscaled) */
     level -= DISPLAY_INT_MIN;       /* make zero based */
 #endif
     intensify(x, y, level, color);
+    if (0) {
+      extern void crt_point (int, int, int);
+      crt_point (0, x, 1023 - y);
+    }
     /* no bleeding for now (used to recurse for neighbor points) */
 
     if (ws_lp_x == -1 || ws_lp_y == -1)
@@ -873,6 +877,10 @@ display_line(int x1,        /* 0..xpixels (unscaled) */
         xline (x1, y1, x2, dx, dy, level);
     else
         yline (x1, y1, y2, dx, dy, level);
+    if (0) {
+      extern void crt_line (int, int, int, int, int);
+      crt_line (0, x1, 1023 - y1, x2, 1023 - y2);
+    }
 } /* display_line */
 
 /*
