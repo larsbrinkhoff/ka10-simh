@@ -102,6 +102,9 @@
 #define MIN_Y   -501
 #define MAX_Y    522
 
+#define UNIT_V_OFF   (UNIT_V_UF)   // Display off.
+#define UNIT_M_OFF   (1 << UNIT_V_OFF)
+
 /*
  * Character map.
  * M(x,y) moves pointer to x,y.
@@ -317,7 +320,8 @@ UNIT iii_unit[] = {
 
 
 MTAB iii_mod[] = {
-    { 0 }
+    {UNIT_M_OFF, UNIT_M_OFF, "OFF", "OFF", NULL},
+    {UNIT_M_OFF,          0, "ON",  "ON",  NULL},
     };
 
 DEVICE iii_dev = {
@@ -402,7 +406,8 @@ iii_svc (UNIT *uptr)
      float     ch_sz;
 
      if (uptr->CYCLE > 20) {
-         display_age(300, 0);
+         if ((uptr->flags & UNIT_M_OFF) == 0)
+             display_age(300, 0);
          uptr->CYCLE = 0;
      } else {
          uptr->CYCLE++;
@@ -644,11 +649,14 @@ uint32 iii_keyboard_line (void *p)
 t_stat iii_reset (DEVICE *dptr)
 {
     if (dptr->flags & DEV_DIS) {
-        display_close(dptr);
+        if ((iii_unit->flags & UNIT_M_OFF) == 0)
+            display_close(dptr);
     } else {
-        display_reset();
         dptr->units[0].POS = 0;
-        display_init(DIS_III, 1, dptr);
+        if ((iii_unit->flags & UNIT_M_OFF) == 0) {
+            display_reset();
+            display_init(DIS_III, 1, dptr);
+        }
     }
     return SCPE_OK;
 }
@@ -661,7 +669,7 @@ draw_point(int x, int y, int b, UNIT *uptr)
    int i, j;
    if (x < MIN_X || x > MAX_X || y < MIN_Y || y > MAX_X)
        uptr->STATUS |= WRP_FBIT;
-   if (iii_sel & 04000)
+   if ((uptr->flags & UNIT_M_OFF) == 0 && (iii_sel & 04000))
        display_point(x - MIN_X, y - MIN_Y, b, 0);
    for (i = 0, j = 04000; i < 12; i++, j >>= 1) {
        if (iii_sel & j)
@@ -678,7 +686,7 @@ draw_line(int x1, int y1, int x2, int y2, int b, UNIT *uptr)
        uptr->STATUS |= WRP_FBIT;
     if (x2 < MIN_X || x2 > MAX_X || y2 < MIN_Y || y2 > MAX_Y)
        uptr->STATUS |= WRP_FBIT;
-    if (iii_sel & 04000)
+    if ((uptr->flags & UNIT_M_OFF) == 0 && (iii_sel & 04000))
        display_line(x1 - MIN_X, y1 - MIN_Y, x2 - MIN_X, y2 - MIN_Y, b);
     for (i = 0, j = 04000; i < 12; i++, j >>= 1) {
        if (iii_sel & j)
