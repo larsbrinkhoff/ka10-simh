@@ -399,7 +399,7 @@ int dkb_keys (SIM_KEY_EVENT *kev, UNIT *uptr)
   }
 }
 
-int dkb_keyboard (SIM_KEY_EVENT *kev)
+int dkb_keyboard_line (SIM_KEY_EVENT *kev, int line)
 {
     sim_debug(DEBUG_DETAIL, &dkb_dev, "DKB key %d %o\n", kev->key, kev->state);
     if (dkb_modifiers (kev))
@@ -408,11 +408,17 @@ int dkb_keyboard (SIM_KEY_EVENT *kev)
     if (dkb_keys (kev, &dkb_unit[0])) {
       dkb_unit[0].DATA |= VALID;
       dkb_unit[0].STATUS |= DONE;
+      dkb_unit[0].LINE = line;
       set_interrupt(DKB_DEVNUM, dkb_unit[0].PIA);
       return 0;
     }
 
     return 1;
+}
+
+int dkb_keyboard (SIM_KEY_EVENT *kev)
+{
+  return dkb_keyboard_line (kev, 0);
 }
 
 
