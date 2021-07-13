@@ -58,7 +58,7 @@ t_addr ten11_end  = 04000000;
 #define ERR             4
 #define TIMEOUT         5
 
-#define TEN11_POLL  100
+#define TEN11_POLL  1000
 
 /* Simulator time units for a Unibus memory cycle. */
 #define UNIBUS_MEM_CYCLE 100
@@ -74,7 +74,7 @@ static t_stat ten11_attach_help (FILE *st, DEVICE *dptr, UNIT *uptr, int32 flag,
 static const char *ten11_description (DEVICE *dptr);
 
 UNIT ten11_unit[1] = {
-  { UDATA (&ten11_svc, UNIT_IDLE|UNIT_ATTABLE, 0), 1000 },
+  { UDATA (&ten11_svc, UNIT_IDLE|UNIT_ATTABLE, 0) },
 };
 
 static REG ten11_reg[] = {
@@ -123,17 +123,26 @@ static TMXR ten11_desc = { 1, 0, 0, &ten11_ldsc };      /* mux descriptor */
 
 static t_stat ten11_reset (DEVICE *dptr)
 {
-  sim_debug(DBG_TRC, dptr, "ten11_reset()\n");
+  sim_debug(DBG_CMD, dptr, "ten11_reset()\n");
+  sim_debug(DBG_CMD, dptr, "ten11_reset power %d\n",
+            sim_switches & SWMASK ('P'));
+  sim_debug(DBG_CMD, dptr, "ten11_reset attach %d\n",
+            ten11_unit[0].flags & UNIT_ATT);
+  sim_debug(DBG_CMD, dptr, "ten11_reset disable %d\n",
+            dptr->flags & DEV_DIS);
+  sim_debug(DBG_CMD, dptr, "ten11_reset conn %d\n", ten11_ldsc.conn);
 
-  ten11_unit[0].flags |= UNIT_ATTABLE | UNIT_IDLE;
+  if (ten11_unit[0].flags & UNIT_ATT) {
+    sim_activate (&ten11_unit[0], 1);
+    return SCPE_OK;
+  }
+
+  sim_debug (DBG_CMD, dptr, "ten11_reset: RESETTING\n");
   ten11_desc.packet = TRUE;
   ten11_desc.notelnet = TRUE;
   ten11_desc.buffered = 2048;
-
-  if (ten11_unit[0].flags & UNIT_ATT)
-    sim_activate_abs (&ten11_unit[0], 0);
-  else
-    sim_cancel (&ten11_unit[0]);
+  sim_cancel (&ten11_unit[0]);
+  sim_debug(DBG_CMD, &ten11_dev, "CANCEL\n");
 
   return SCPE_OK;
 }
@@ -146,12 +155,14 @@ static t_stat ten11_attach (UNIT *uptr, CONST char *cptr)
     return SCPE_ARG;
   if (!(uptr->flags & UNIT_ATTABLE))
     return SCPE_NOATT;
+  r = ten11_reset (&ten11_dev);
+  if (r != SCPE_OK)                                       /* error? */
+    return r;
   r = tmxr_attach_ex (&ten11_desc, uptr, cptr, FALSE);
   if (r != SCPE_OK)                                       /* error? */
     return r;
-  sim_debug(DBG_TRC, &ten11_dev, "activate connection\n");
-  sim_activate_abs (uptr, 0);    /* start poll */
-  uptr->flags |= UNIT_ATT;
+  sim_debug(DBG_CMD, &ten11_dev, "activate connection\n");
+  sim_activate (uptr, 1);    /* start poll */
   return SCPE_OK;
 }
 
@@ -163,7 +174,6 @@ static t_stat ten11_detach (UNIT *uptr)
     return SCPE_OK;
   sim_cancel (uptr);
   r = tmxr_detach (&ten11_desc, uptr);
-  uptr->flags &= ~UNIT_ATT;
   free (uptr->filename);
   uptr->filename = NULL;
   return r;
@@ -184,6 +194,7 @@ static t_stat ten11_svc (UNIT *uptr)
   }
   if (tmxr_poll_conn(&ten11_desc) >= 0) {
     sim_debug(DBG_CMD, &ten11_dev, "got connection\n");
+    sim_debug(DBG_CMD, &ten11_dev, "conn %d\n", ten11_ldsc.conn);
     ten11_ldsc.rcve = 1;
     uptr->wait = TEN11_POLL;
   }
@@ -218,8 +229,8 @@ static const char *ten11_description (DEVICE *dptr)
 
 static int error (const char *message)
 {
-  sim_debug (DBG_TRC, &ten11_dev, "%s\r\n", message);
-  sim_debug (DBG_TRC, &ten11_dev, "CLOSE\r\n");
+  sim_debug (DBG_CMD, &ten11_dev, "%s\r\n", message);
+  sim_debug (DBG_CMD, &ten11_dev, "CLOSE\r\n");
   ten11_ldsc.rcve = 0;
   tmxr_reset_ln (&ten11_ldsc);
   return -1;
@@ -231,6 +242,7 @@ static int transaction (unsigned char *request, unsigned char *response)
   size_t size;
   t_stat stat;
 
+  sim_debug(DBG_CMD, &ten11_dev, "transaction conn %d\n", ten11_ldsc.conn);
   stat = tmxr_put_packet_ln (&ten11_ldsc, request + 1, (size_t)request[0]);
   if (stat != SCPE_OK)
     return error ("Write error in transaction");
@@ -303,7 +315,7 @@ int ten11_read (t_addr addr, uint64 *data)
   if (addr >= T11CPA) {
     /* Accessing the control page. */
     if (offset >= 0400) {
-      sim_debug (DBG_TRC, &ten11_dev,
+      sim_debug (DBG_CMD, &ten11_dev,
                  "Control page read NXM: %o @ %o\n",
                  offset, PC);
       return 1;
@@ -385,7 +397,7 @@ int ten11_write (t_addr addr, uint64 data)
   if (addr >= T11CPA) {
     /* Accessing the control page. */
     if (offset >= 0400) {
-      sim_debug (DBG_TRC, &ten11_dev,
+      sim_debug (DBG_CMD, &ten11_dev,
                  "Control page write NXM: %o @ %o\n",
                  offset, PC);
       return 1;
