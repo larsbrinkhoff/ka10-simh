@@ -403,6 +403,7 @@ for (vptr = &vid_first; vptr != NULL; vptr = vptr->next) {
         }
     }
 
+#if 0
 switch (ev->type) {
     case SDL_KEYDOWN:
     case SDL_KEYUP:
@@ -472,6 +473,7 @@ switch (ev->type) {
 sim_messagef (SCPE_OK,
 "\nSIMH has encountered a bug in SDL2.  An upgrade to SDL2\n"
 "version 2.0.14 should fix this problem.\n");
+#endif
 
 return NULL;
 }

@@ -65,9 +65,9 @@
 #define DD_NXM      000002000    /* CONI: Accessed non existing memory. */
 
 /* There are 64 displays, fed from the video switch. */
-static uint32 dd_surface[VDS_OUTPUTS][DD_PIXELS];
-static uint32 dd_palette[VDS_OUTPUTS][2];
-static VID_DISPLAY *dd_vptr[VDS_OUTPUTS];
+static uint32 vds_surface[VDS_OUTPUTS][DD_PIXELS];
+static uint32 vds_palette[VDS_OUTPUTS][2];
+static VID_DISPLAY *vds_vptr[VDS_OUTPUTS];
 
 /* There are 32 channels on the Data Disc. */
 static uint8 dd_channel[DD_CHANNELS][DD_PIXELS];
@@ -427,8 +427,10 @@ dd_display (int n)
     uint32 selection = vds_selection[n];
     int i, j;
 
-    if (selection == 0)
+    if (selection == 0) {
+        sim_debug(DEBUG_CMD, &vds_dev, "Output %d displays no channels\n", n);
         return;
+    }
 
 #if 1
     if (!(selection & (selection - 1))) {
@@ -438,7 +440,7 @@ dd_display (int n)
             return;
         sim_debug(DEBUG_CMD, &vds_dev, "Output %d from channel %d\n", n, i);
         for (j = 0; j < DD_PIXELS; j++)
-            dd_surface[n][j] = dd_palette[n][dd_channel[i][j]];
+            vds_surface[n][j] = vds_palette[n][dd_channel[i][j]];
     } else {
 #endif
 
@@ -448,15 +450,16 @@ dd_display (int n)
         for (i = 0; i < DD_CHANNELS; i++, selection <<= 1) {
             if (selection & 020000000000)
                 pixel |= dd_channel[i][j];
-            dd_surface[n][j] = dd_palette[n][pixel];
+            vds_surface[n][j] = vds_palette[n][pixel];
         }
     }
 #else
     }
 #endif
 
-    vid_draw_window (dd_vptr[n], 0, 0, DD_WIDTH, DD_HEIGHT, dd_surface[n]);
-    vid_refresh_window (dd_vptr[n]);
+    vid_draw_window (vds_vptr[n], 0, 0, DD_WIDTH, DD_HEIGHT, vds_surface[n]);
+    vid_refresh_window (vds_vptr[n]);
+    sim_debug (DEBUG_CMD, &vds_dev, "Refresh window %p\n", vds_vptr[n]);
 }
 
 t_stat
@@ -477,8 +480,9 @@ uint32 dd_keyboard_line (void *p)
 {
     int i;
     VID_DISPLAY *vptr = (VID_DISPLAY *)p;
+    sim_debug(DEBUG_CMD, &vds_dev, "Key event on window %p\n", vptr);
     for (i = 0; i < VDS_OUTPUTS; i++) {
-        if (vptr == dd_vptr[i])
+        if (vptr == vds_vptr[i])
             return i;
     }
     return ~0U;
@@ -512,12 +516,12 @@ t_stat vds_reset (DEVICE *dptr)
     int i;
     if (dptr->flags & DEV_DIS || sim_switches & SWMASK('P')) {
         for (i = 0; i < VDS_OUTPUTS; i++) {
-            if (dd_vptr[i] != NULL)
-                vid_close_window (dd_vptr[i]);
+            if (vds_vptr[i] != NULL)
+                vid_close_window (vds_vptr[i]);
         }
         vds_channel = 0;
-        memset (dd_vptr, 0, sizeof dd_vptr);
-        memset (dd_palette, 0, sizeof dd_palette);
+        memset (vds_vptr, 0, sizeof vds_vptr);
+        memset (vds_palette, 0, sizeof vds_palette);
         memset (vds_selection, 0, sizeof vds_selection);
         memset (vds_sync_inhibit, 0, sizeof vds_sync_inhibit);
         memset (vds_analog, 0, sizeof vds_analog);
@@ -526,14 +530,15 @@ t_stat vds_reset (DEVICE *dptr)
     }
 
     for (i = 6; i < dd_windows + 6; i++) {
-        if (dd_vptr[i] == NULL) {
+        if (vds_vptr[i] == NULL) {
             char title[40];
             snprintf (title, sizeof title, "Data Disc display %d", i);
-            r = vid_open_window (&dd_vptr[i], &dd_dev, title, DD_WIDTH, DD_HEIGHT, 0);
+            r = vid_open_window (&vds_vptr[i], &dd_dev, title, DD_WIDTH, DD_HEIGHT, 0);
             if (r != SCPE_OK)
                 return r;
-            dd_palette[i][0] = vid_map_rgb_window (dd_vptr[i], 0x00, 0x00, 0x00);
-            dd_palette[i][1] = vid_map_rgb_window (dd_vptr[i], 0x00, 0xFF, 0x30);
+            fprintf(stderr, "Window %d is %p\r\n", i, vds_vptr[i]);
+            vds_palette[i][0] = vid_map_rgb_window (vds_vptr[i], 0x00, 0x00, 0x00);
+            vds_palette[i][1] = vid_map_rgb_window (vds_vptr[i], 0x00, 0xFF, 0x30);
         }
     }
 
