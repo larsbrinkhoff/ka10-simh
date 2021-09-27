@@ -371,8 +371,10 @@ DEVICE *vid_dev;
 t_bool vid_key_state[SDL_NUM_SCANCODES];
 VID_DISPLAY *next;
 t_bool vid_blending;
+t_bool vid_dst_flag;
 SDL_Rect *vid_dst_last;
 uint32 *vid_data_last;
+size_t vid_data_size;
 };
 
 SDL_Thread *vid_thread_handle = NULL;                   /* event thread handle */
@@ -875,50 +877,43 @@ return SDL_MapRGBA (vptr->vid_format, r, g, b, a);
 void vid_draw_window (VID_DISPLAY *vptr, int32 x, int32 y, int32 w, int32 h, uint32 *buf)
 {
 SDL_Event user_event;
-SDL_Rect *vid_dst, *last = vptr->vid_dst_last;
-uint32 *vid_data;
+SDL_Rect *dst = vptr->vid_dst_last;
 
 sim_debug (SIM_VID_DBG_VIDEO, vptr->vid_dev, "vid_draw(%d, %d, %d, %d)\n", x, y, w, h);
 
 SDL_LockMutex (vptr->vid_draw_mutex);                         /* Synchronize to check region dimensions */
-if (last                               &&               /* As yet unprocessed draw rectangle? */
-    (last->x == x) && (last->y == y) &&                 /* AND identical position? */
-    (last->w == w) && (last->h == h)) {                 /* AND identical dimensions? */
+if (vptr->vid_dst_flag                 &&               /* As yet unprocessed draw rectangle? */
+    (dst->x == x) && (dst->y == y) &&                   /* AND identical position? */
+    (dst->w == w) && (dst->h == h)) {                   /* AND identical dimensions? */
     memcpy (vptr->vid_data_last, buf, w*h*sizeof(*buf));/* Replace region contents */
     SDL_UnlockMutex (vptr->vid_draw_mutex);                   /* Done */
     return;
     }
+vptr->vid_dst_flag = TRUE;
 SDL_UnlockMutex (vptr->vid_draw_mutex);
 
-vid_dst = (SDL_Rect *)malloc (sizeof(*vid_dst));
-if (!vid_dst) {
-    sim_printf ("%s: vid_draw() memory allocation error\n", vid_dname(vptr->vid_dev));
-    return;
+dst->x = x;
+dst->y = y;
+dst->w = w;
+dst->h = h;
+if (vptr->vid_data_size < w*h*sizeof(*buf)) {
+    vptr->vid_data_size = w*h*sizeof(*buf);
+    vptr->vid_data_last = realloc (vptr->vid_data_last, vptr->vid_data_size);
+    if (!vptr->vid_data_last) {
+        vptr->vid_dst_flag = FALSE;
+        vptr->vid_data_size = 0;
+        sim_printf ("%s: vid_draw() memory allocation error\n", vid_dname(vptr->vid_dev));
+        return;
+        }
     }
-vid_dst->x = x;
-vid_dst->y = y;
-vid_dst->w = w;
-vid_dst->h = h;
-vid_data = (uint32 *)malloc (w*h*sizeof(*buf));
-if (!vid_data) {
-    sim_printf ("%s: vid_draw() memory allocation error\n", vid_dname(vptr->vid_dev));
-    free (vid_dst);
-    return;
-    }
-memcpy (vid_data, buf, w*h*sizeof(*buf));
+memcpy (vptr->vid_data_last, buf, w*h*sizeof(*buf));
 user_event.type = SDL_USEREVENT;
 user_event.user.windowID = vptr->vid_windowID;
 user_event.user.code = EVENT_DRAW;
-user_event.user.data1 = (void *)vid_dst;
-user_event.user.data2 = (void *)vid_data;
-SDL_LockMutex (vptr->vid_draw_mutex);         /* protect vid_dst_last & vid_data_last */
-vptr->vid_dst_last = vid_dst;
-vptr->vid_data_last = vid_data;
-SDL_UnlockMutex (vptr->vid_draw_mutex);       /* done protection */
+user_event.user.data1 = (void *)vptr->vid_dst_last;
+user_event.user.data2 = (void *)vptr->vid_data_last;
 if (SDL_PushEvent (&user_event) < 0) {
     sim_printf ("%s: vid_draw() SDL_PushEvent error: %s\n", vid_dname(vptr->vid_dev), SDL_GetError());
-    free (vid_dst);
-    free (vid_data);
     }
 }
 
@@ -1708,8 +1703,7 @@ sim_debug (SIM_VID_DBG_VIDEO, vptr->vid_dev, "Draw Region Event: (%d,%d,%d,%d)\n
 
 SDL_LockMutex (vptr->vid_draw_mutex);
 if (vid_dst == vptr->vid_dst_last) {
-    vptr->vid_dst_last = NULL;
-    vptr->vid_data_last = NULL;
+    vptr->vid_dst_flag = FALSE;
     }
 SDL_UnlockMutex (vptr->vid_draw_mutex);
 
@@ -1781,8 +1775,10 @@ else
     SDL_SetWindowTitle (vptr->vid_window, vptr->vid_title);
 
 memset (&vptr->vid_key_state, 0, sizeof(vptr->vid_key_state));
-vptr->vid_dst_last = NULL;
-vptr->vid_data_last = NULL;
+vptr->vid_dst_flag = FALSE;
+vptr->vid_dst_last = (SDL_Rect *)malloc (sizeof(SDL_Rect));
+vptr->vid_data_last = (uint32 *)malloc (1);
+vptr->vid_data_size = 1;
 
 vid_active++;
 return 1;
