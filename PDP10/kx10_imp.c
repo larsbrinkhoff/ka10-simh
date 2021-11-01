@@ -1,6 +1,6 @@
 /* kx10_imp.c: IMP, interface message processor.
 
-   Copyright (c) 2018-2020, Richard Cornwell based on code provided by
+   Copyright (c) 2018-2021, Richard Cornwell based on code provided by
          Lars Brinkhoff and Danny Gasparovski.
 
    Permission is hereby granted, free of charge, to any person obtaining a
@@ -26,6 +26,7 @@
 
 #include "kx10_defs.h"
 #include "sim_ether.h"
+#include "h316_imp.h"
 
 #if NUM_DEVS_IMP > 0
 #define IMP_DEVNUM  0460
@@ -39,10 +40,15 @@
 #define UNIT_M_DTYPE    3
 #define UNIT_DTYPE      (UNIT_M_DTYPE << UNIT_V_DTYPE)
 #define GET_DTYPE(x)    (((x) >> UNIT_V_DTYPE) & UNIT_M_DTYPE)
+#define UNIT_V_UDP      (UNIT_V_UF + 3)                 /* Host interface speaks UDP */
+#define UNIT_UDP        (1 << UNIT_V_UDP)
 
 #define TYPE_MIT        0              /* MIT Style KAIMP ITS */
 #define TYPE_BBN        1              /* BBN style interface TENEX */
 #define TYPE_WAITS      2              /* IMP connected to waits system. */
+
+#define UDP_LAST   1 /* Last packet in message. */
+#define UDP_READY  2 /* IMP/host ready bit. */
 
 /* ITS IMP Bits */
 
@@ -456,8 +462,10 @@ t_stat         imp_show_arp (FILE *st, UNIT *uptr, int32 val, CONST void *desc);
 t_stat         imp_set_arp (UNIT *uptr, int32 val, CONST char *cptr, void *desc);
 void           imp_timer_task(struct imp_device *imp);
 void           imp_send_rfmn(struct imp_device *imp);
-void           imp_packet_in(struct imp_device *imp);
-void           imp_send_packet (struct imp_device *imp_data, int len);
+void           imp_ethernet_in(struct imp_device *imp);
+void           imp_send_ethernet (struct imp_device *imp_data, int len);
+void           imp_udp_in(struct imp_device *imp);
+void           imp_send_udp (struct imp_device *imp_data, int len);
 void           imp_free_packet(struct imp_device *imp, struct imp_packet *p);
 struct imp_packet * imp_get_packet(struct imp_device *imp);
 void           imp_arp_update(struct imp_device *imp, in_addr_T ipaddr, ETH_MAC *ethaddr, int age);
@@ -480,6 +488,11 @@ const char     *imp_description (DEVICE *dptr);
 static char    *ipv4_inet_ntoa(struct in_addr ip);
 static int     ipv4_inet_aton(const char *str, struct in_addr *inp);
 
+static int32 udp_link;
+static  void (*imp_send_packet) (struct imp_device *imp_data, int len) =
+  imp_send_ethernet;
+static void  (*imp_packet_in) (struct imp_device *imp) =
+  imp_ethernet_in;
 
 int       imp_mpx_lvl = 0;
 double    last_coni;
@@ -522,6 +535,10 @@ MTAB imp_mod[] = {
            "Tenex/BBN style interface"},
     { UNIT_DTYPE, (TYPE_WAITS << UNIT_V_DTYPE), "WAITS", "WAITS", NULL, NULL,  NULL,
            "WAITS style interface"},
+    { UNIT_UDP, 0,        "ETHERNET", "ETHERNET", NULL, NULL, NULL,
+           "IMP-Host interface to Ethernet"},
+    { UNIT_UDP, UNIT_UDP, "UDP", "UDP", NULL, NULL, NULL,
+           "IMP-Host interface to UDP"},
     { MTAB_XTD|MTAB_VDV|MTAB_NMO, 0, "ARP", NULL,
       NULL, &imp_show_arp, NULL, "ARP IP address->MAC address table" },
     { MTAB_XTD|MTAB_VDV|MTAB_VALR, 0, NULL, "ARP=ddd.ddd.ddd.ddd=XX:XX:XX:XX:XX:XX",
@@ -942,7 +959,7 @@ t_stat imp_tim_srv(UNIT * uptr)
 }
 
 void
-imp_packet_in(struct imp_device *imp)
+imp_ethernet_in(struct imp_device *imp)
 {
    ETH_PACK                read_buffer;
    struct imp_eth_hdr     *hdr;
@@ -1153,7 +1170,42 @@ imp_packet_in(struct imp_device *imp)
 }
 
 void
-imp_send_packet (struct imp_device *imp, int len)
+imp_udp_in (struct imp_device *imp)
+{
+    static uint16 packet[100];
+    uint8 *data;
+    uint16 len;
+    int16 count;
+    size_t n;
+
+    data = imp->rbuffer;
+    len = sizeof packet / 2;
+    imp_unit[0].ILEN = 0;
+
+    for (;;) {
+        count = udp_receive (&imp_dev, udp_link, packet, len);
+        if (count < 0)
+            return;
+        else if (count == 0)
+            return;
+        else {
+            imp_unit[0].STATUS &= ~IMPR;
+            if (packet[0] & UDP_READY)
+                imp_unit[0].STATUS |= IMPR;
+
+            count--; //Exclude the flags word from the count.
+            memcpy (data, packet + 1, 2 * count);
+            data += 2 * count;
+            len -= count;
+            imp_unit[0].ILEN += 16 * count;
+            if (packet[0] & UDP_LAST)
+                return;
+        }
+    }
+}
+
+void
+imp_send_ethernet (struct imp_device *imp, int len)
 {
     ETH_PACK   write_buffer;
     int        i;
@@ -1231,6 +1283,23 @@ fprintf(stderr, "IMP: Host shutdown\r\n");
            break;
     }
     return;
+}
+
+void
+imp_send_udp (struct imp_device *imp, int len)
+{
+    static uint16 packet[100];
+    uint16 flags;
+    t_stat ret;
+
+    flags = UDP_LAST;
+    if (imp_unit[0].STATUS & IMPHR)
+        flags |= UDP_READY;
+    packet[0] = flags;
+    len += 2; //Account for the flags word.
+
+    memcpy (packet + 1, imp->sbuffer, len);
+    ret = udp_send (&imp_dev, udp_link, packet, (len + 1) / 2);
 }
 
 /*
@@ -2624,6 +2693,14 @@ t_stat imp_reset (DEVICE *dptr)
     int  i;
     struct imp_packet *p;
 
+    if (imp_unit[0].flags & UNIT_UDP) {
+        imp_packet_in = imp_udp_in;
+        imp_send_packet = imp_send_udp;
+    } else {
+        imp_packet_in = imp_ethernet_in;
+        imp_send_packet = imp_send_ethernet;
+    }
+
     for (i = 0; i < 6; i++) {
         if (imp_data.mac[i] != 0)
             break;
@@ -2669,6 +2746,12 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
                    imp_dib.dev_num = WA_IMP_DEVNUM;
                    break;
     }
+
+    if (uptr->flags & UNIT_UDP) {
+        sim_activate (&imp_unit[1], tmxr_poll); /* Start reciever task */
+        return udp_create (uptr->dptr, cptr, &udp_link);
+    }
+
     if (!(uptr->flags & UNIT_DHCP) && imp_data.ip == 0)
       return sim_messagef (SCPE_NOATT, "%s: An IP Address must be specified when DHCP is disabled\n", 
                imp_dev.name);
@@ -2752,16 +2835,22 @@ t_stat imp_detach(UNIT* uptr)
 {
 
     if (uptr->flags & UNIT_ATT) {
+        uptr->flags &= ~UNIT_ATT;
+        sim_cancel (uptr+1);                /* stop the packet timing services */
+        sim_cancel (uptr+2);                /* stop the clock timer services */
+
+        if (uptr->flags & UNIT_UDP) {
+            udp_release (&imp_dev, udp_link);
+            return SCPE_OK;
+        }
+
         /* If DHCP, release our IP address */
         if (uptr->flags & UNIT_DHCP) {
           imp_dhcp_release(&imp_data);
         }
-        sim_cancel (uptr+1);                /* stop the packet timing services */
-        sim_cancel (uptr+2);                /* stop the clock timer services */
         eth_close (&imp_data.etherface);
         free(uptr->filename);
         uptr->filename = NULL;
-        uptr->flags &= ~UNIT_ATT;
     }
     return SCPE_OK;
 }
