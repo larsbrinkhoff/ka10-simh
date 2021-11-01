@@ -38,7 +38,7 @@
 #include "sim_defs.h"                                   /* simulator defns */
 
 #if defined(USE_INT64) || defined(USE_ADDR64)
-#error "H316 does not support 64b values!"
+//#error "H316 does not support 64b values!"
 #endif
 
 /* Simulator stop codes */
