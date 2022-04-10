@@ -876,6 +876,8 @@ get_quantum()
 #endif
 
 
+#define DEBUG 1
+
 /*
  * Set device to interrupt on a given level 1-7
  * Level 0 means that device interrupt is not enabled
@@ -1558,8 +1560,10 @@ void check_apr_irq() {
          if (flg)
              set_interrupt(0, apr_irq);
      }
-     if (pi_enable && clk_en && clk_flg)
+     if (pi_enable && clk_en && clk_flg) {
          set_interrupt(4, clk_irq);
+         sim_debug(DEBUG_IRQ, &cpu_dev, "Set clock interrupt\n");
+     }
 }
 
 
@@ -1590,15 +1594,19 @@ t_stat dev_apr(uint32 dev, uint64 *data) {
         if (res & 0001000) {
             clk_flg = 0;
             clr_interrupt(4);
+            sim_debug(DEBUG_IRQ, &cpu_dev, "Clear clock interrupt\n");
         }
         if (res & 0002000) {
             clk_en = 1;
-            if (clk_flg)
+            if (clk_flg) {
                set_interrupt(4, clk_irq);
+               sim_debug(DEBUG_IRQ, &cpu_dev, "Set clock interrupt\n");
+            }
         }
         if (res & 0004000) {
             clk_en = 0;
             clr_interrupt(4);
+            sim_debug(DEBUG_IRQ, &cpu_dev, "Clear clock interrupt\n");
         }
         if (res & 0040000)
             timer_irq = 1;
@@ -1767,15 +1775,19 @@ t_stat dev_apr(uint32 dev, uint64 *data) {
         if (res & 0001000) {
             clk_flg = 0;
             clr_interrupt(4);
+            sim_debug(DEBUG_IRQ, &cpu_dev, "Clear clock interrupt\n");
         }
         if (res & 0002000) {
             clk_en = 1;
-            if (clk_flg)
+            if (clk_flg) {
                set_interrupt(4, clk_irq);
+               sim_debug(DEBUG_IRQ, &cpu_dev, "Set clock interrupt\n");
+            }
         }
         if (res & 0004000) {
             clk_en = 0;
             clr_interrupt(4);
+            sim_debug(DEBUG_IRQ, &cpu_dev, "Clear clock interrupt\n");
         }
         if (res & 010000)
             nxm_flag = 0;
@@ -4232,15 +4244,19 @@ t_stat dev_apr(uint32 dev, uint64 *data) {
         if (res & 0001000) { /* Bit 26 */
             clk_flg = 0;
             clr_interrupt(4);
+            sim_debug(DEBUG_IRQ, &cpu_dev, "Clear clock interrupt\n");
         }
         if (res & 0002000) { /* Bit 25 */
             clk_en = 1;
-            if (clk_flg)
+            if (clk_flg) {
                set_interrupt(4, clk_irq);
+               sim_debug(DEBUG_IRQ, &cpu_dev, "Set clock interrupt\n");
+            }
         }
         if (res & 0004000) { /* Bit 24 */
             clk_en = 0;
             clr_interrupt(4);
+            sim_debug(DEBUG_IRQ, &cpu_dev, "Clear clock interrupt\n");
         }
         if (res & 010000)    /* Bit 23 */
             nxm_flag = 0;
@@ -13556,6 +13572,7 @@ rtc_srv(UNIT * uptr)
     if (clk_en) {
 #endif
         sim_debug(DEBUG_CONO, &cpu_dev, "CONO timmer\n");
+        sim_debug(DEBUG_IRQ, &cpu_dev, "Set clock interrupt\n");
         set_interrupt(4, clk_irq);
     }
 #elif KS
