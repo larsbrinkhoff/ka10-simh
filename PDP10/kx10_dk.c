@@ -104,6 +104,7 @@ t_stat dk_devio(uint32 dev, uint64 *data) {
     case CONO:
         /* Adjust U3 */
         clr_interrupt(dev);
+        sim_debug(DEBUG_IRQ, &dk_dev, "Clear interrupt\n");
         uptr->STAT_REG &= ~07;
         if (*data & CLK_GEN_CLR) {
            uptr->CLK_REG = 0;
@@ -139,7 +140,9 @@ t_stat dk_devio(uint32 dev, uint64 *data) {
         if ((uptr->STAT_REG & CLK_EN) != 0 &&
                 (uptr->STAT_REG & (CLK_FLG|CLK_OVF))) {
            set_interrupt(dev, uptr->STAT_REG);
+           sim_debug(DEBUG_IRQ, &dk_dev, "Set interrupt (1)\n");
         }
+        //break;
 
 set_clock:
         if (sim_is_active(uptr)) {  /* Save current clock time */
@@ -150,6 +153,10 @@ set_clock:
         if (uptr->INT_REG == uptr->CLK_REG) {
            uptr->STAT_REG |= CLK_FLG; 
            set_interrupt(dev, uptr->STAT_REG);
+           sim_debug(DEBUG_IRQ, &dk_dev, "INT_REG = %012llo\n", uptr->INT_REG);
+           sim_debug(DEBUG_IRQ, &dk_dev, "CLK_REG = %012llo\n", uptr->CLK_REG);
+           sim_debug(DEBUG_IRQ, &dk_dev, "Set interrupt (2)\n");
+           uptr->CLK_REG = 0;
         }
         if (uptr->STAT_REG & CLK_EN) {
            if (uptr->INT_REG < uptr->CLK_REG)  /* Count until overflow */
@@ -204,6 +211,7 @@ void dk_test (UNIT *uptr)
     if (uptr->STAT_REG & (CLK_FLG|CLK_OVF)) {
        dev = ((uptr - dk_unit) << 2) + DK_DEVNUM;
        set_interrupt(dev, uptr->STAT_REG);
+       sim_debug(DEBUG_IRQ, &dk_dev, "Set interrupt (3)\n");
     }
     if (uptr->STAT_REG & CLK_EN) {
        if (uptr->INT_REG < uptr->CLK_REG)  /* Count until overflow */

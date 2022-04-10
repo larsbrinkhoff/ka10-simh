@@ -258,6 +258,7 @@ DEBTAB              dev_debug[] = {
     {"CONI", DEBUG_CONI, "Show coni instructions"},
     {"CONO", DEBUG_CONO, "Show cono instructions"},
     {"DATAIO", DEBUG_DATAIO, "Show datai and datao instructions"},
+    {"IRQ", DEBUG_IRQ, "Debug IRQ requests"},
     {0, 0}
 };
 
@@ -401,10 +402,12 @@ int get_evac(FILE *fileref, uint64 *word)
 
     if (bits == 42) {
         *word = (data >> 6) & -2LL;
+        fprintf (stderr, "[%012llo]\n", *word);
         data &= 0177;
         bits = 7;
     } else {
         *word = data;
+        fprintf (stderr, "[%012llo]\n", *word);
         data = 0;
         bits = 0;
     }
