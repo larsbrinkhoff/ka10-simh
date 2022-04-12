@@ -418,7 +418,7 @@ t_stat dp_devio(uint32 dev, uint64 *data) {
      switch(dev & 3) {
      case CONI:
         *data = (uint64)(df10->status | uptr->STATUS);
-#if KI_22BIT
+#if 0
         *data |= B22_FLAG;
 #endif
         sim_debug(DEBUG_CONI, dptr, "DP %03o CONI %012llo %d PC=%o\n", dev,

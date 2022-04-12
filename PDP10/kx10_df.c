@@ -23,6 +23,16 @@
 
 #include "kx10_defs.h"
 
+#undef AMASK
+#define AMASK           RMASK
+#undef WMASK
+#define WMASK           RMASK
+#undef CSHIFT
+#define CSHIFT          18
+
+//#define AMASK           00000017777777LL
+//#define WMASK           0037777LL
+//#define CSHIFT          22
 
 /* Set an IRQ for a DF10 device */
 void df10_setirq(struct df10 *df) {

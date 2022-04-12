@@ -62,6 +62,7 @@
 #error "Please define only one type of CPU"
 #endif
 
+#define KI_22BIT 0
 #ifndef KI_22BIT
 #define KI_22BIT KI|KL
 #endif
