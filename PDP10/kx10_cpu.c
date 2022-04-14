@@ -1086,13 +1086,19 @@ t_stat dev_pi(uint32 dev, uint64 *data) {
 t_stat null_dev(uint32 dev, uint64 *data) {
     switch(dev & 3) {
     case CONI:
+        sim_debug(DEBUG_CONI, &cpu_dev, "%03o\n", dev);
+        *data = 0;
+        break;
     case DATAI:
-         *data = 0;
-         break;
-
+        sim_debug(DEBUG_DATAIO, &cpu_dev, "DATAI %03o\n", dev);
+        *data = 0;
+        break;
     case CONO:
+        sim_debug(DEBUG_CONO, &cpu_dev, "%03o %012llo\n", dev, *data);
+        break;
     case DATAO:
-         break;
+        sim_debug(DEBUG_DATAIO, &cpu_dev, "DATAO %03o,%012llo\n", dev, *data);
+        break;
     }
     return SCPE_OK;
 }
