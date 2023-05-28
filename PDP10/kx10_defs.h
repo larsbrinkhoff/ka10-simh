@@ -78,7 +78,7 @@
 
 /* Support for WAITS mods */
 #ifndef WAITS
-#define WAITS KA
+#define WAITS (KA|KL)
 #endif
 
 /* Support for ITS on KL */
@@ -738,9 +738,11 @@ extern void ka10_lights_clear_aux (int);
 #define NUM_DEVS_CR     1
 #define NUM_DEVS_CP     1
 #endif
+#if PDP6|KA10
 #define NUM_DEVS_DPY    USE_DISPLAY
 #define NUM_DEVS_WCNSLS USE_DISPLAY
 #define NUM_DEVS_OCNSLS USE_DISPLAY
+#endif
 #if PDP6_DEV
 #define NUM_DEVS_DTC    1
 #define NUM_DEVS_DCT    2
@@ -786,13 +788,15 @@ extern void ka10_lights_clear_aux (int);
 #define NUM_DEVS_TU     1
 #define NUM_DEVS_IMP    1
 #endif
-#if KA
+#if KA | KL
 #define NUM_DEVS_PMP    WAITS
 #define NUM_DEVS_DKB    (WAITS * USE_DISPLAY)
 #define NUM_DEVS_III    (WAITS * USE_DISPLAY)
 #define NUM_DEVS_TV     (WAITS * USE_DISPLAY)
-#define NUM_DEVS_PD     ITS
 #define NUM_DEVS_PCLK   WAITS
+#endif
+#if KA
+#define NUM_DEVS_PD     ITS
 #define NUM_DEVS_IMX    ITS
 #define NUM_DEVS_STK    ITS
 #define NUM_DEVS_TK10   ITS

@@ -804,4 +804,13 @@ t_stat ocnsls_devio(uint32 dev, uint64 *data) {
 }
 #endif
 #endif
+
+#else
+
+/* Dummy. */
+void cpu_get_switches(unsigned long *p1, unsigned long *p2) {
+}
+void cpu_set_switches(unsigned long w1, unsigned long w2) {
+}
+
 #endif

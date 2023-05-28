@@ -121,8 +121,8 @@ ifneq (3,${SIM_MAJOR})
   ifneq (,$(findstring tt2500,${MAKECMDGOALS}))
     VIDEO_USEFUL = true
   endif
-  # building the PDP6, KA10 or KI10 needs video support
-  ifneq (,$(or $(findstring pdp6,${MAKECMDGOALS}),$(findstring pdp10-ka,${MAKECMDGOALS}),$(findstring pdp10-ki,${MAKECMDGOALS})))
+  # building the PDP6, KA10, KI10, or KL10 needs video support
+  ifneq (,$(or $(findstring pdp6,${MAKECMDGOALS}),$(findstring pdp10-ka,${MAKECMDGOALS}),$(findstring pdp10-ki,${MAKECMDGOALS}),$(findstring pdp10-kl,${MAKECMDGOALS})))
     VIDEO_USEFUL = true
   endif
 endif
@@ -1482,6 +1482,9 @@ KI10_LDFLAGS = -lusb-1.0
 endif
 
 KL10D = ${SIMHD}/PDP10
+ifneq (,${DISPLAY_OPT})
+  KL10_DISPLAY_OPT = 
+endif
 KL10 = ${KL10D}/kx10_cpu.c ${KL10D}/kx10_sys.c ${KL10D}/kx10_df.c \
 	${KA10D}/kx10_dp.c ${KA10D}/kx10_mt.c ${KA10D}/kx10_lp.c \
     ${KA10D}/kx10_pt.c ${KA10D}/kx10_dc.c ${KL10D}/kx10_rh.c \
@@ -1489,8 +1492,13 @@ KL10 = ${KL10D}/kx10_cpu.c ${KL10D}/kx10_sys.c ${KL10D}/kx10_df.c \
 	${KL10D}/kx10_rp.c ${KL10D}/kx10_tu.c ${KL10D}/kx10_rs.c \
 	${KL10D}/kx10_imp.c ${KL10D}/kl10_fe.c ${KL10D}/ka10_pd.c \
 	${KL10D}/ka10_ch10.c ${KL10D}/kl10_nia.c ${KL10D}/kx10_disk.c \
-    ${KL10D}/kl10_dn.c
-KL10_OPT = -DKL=1 -DUSE_INT64 -I $(KL10D) -DUSE_SIM_CARD ${NETWORK_OPT} 
+    ${KL10D}/kl10_dn.c \
+	$(KA10D)/ka10_pmp.c ${KA10D}/ka10_dkb.c ${KA10D}/pdp6_dct.c \
+	${KA10D}/pdp6_dtc.c ${KA10D}/pdp6_mtc.c ${KA10D}/pdp6_dsk.c \
+	${KA10D}/pdp6_dcs.c ${KA10D}/kx10_dpy.c ${KA10D}/ka10_iii.c \
+	${PDP10D}/ka10_pclk.c ${PDP10D}/ka10_tv.c \
+	${DISPLAYL}
+KL10_OPT = -DKL=1 -DUSE_INT64 -I $(KL10D) -DUSE_SIM_CARD ${NETWORK_OPT} ${DISPLAY_OPT} ${KL10_DISPLAY_OPT}
 
 KS10D = ${SIMHD}/PDP10
 KS10 = ${KS10D}/kx10_cpu.c ${KS10D}/kx10_sys.c ${KS10D}/kx10_disk.c \
