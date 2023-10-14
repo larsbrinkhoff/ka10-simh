@@ -108,70 +108,70 @@ int           rep_count;  /* Count down to repeat trigger */
 /* IND_LAMP = IND */
 
 /* led row 0 */
-#define MB_MASK0             0xffff00000  /* 0-15 */
-#define MB_V_0               20           /* Right */
+// MI/MB 18-35
 
 /* led row 1 */
-#define MB_MASK1             0x0000ffff0  /* 16-31 */
-#define MB_V_1               4           /* Right */
+// MI/MB 0-17
 
 /* led row 2 */
-#define RUN_LAMP             0x0080
-#define PION_LAMP            0x0100
-#define PWR_LAMP             0x0200
+// MA
+
 #define PI_ENB_MASK          0x007f
-#define MB_MASK2             0x0000000f  /* 32-35 */
-#define MB_V_2               12          /* Left */
-#define PI_LAMP              0x0400
-#define MI_LAMP              0x0800
+#define MB_MASK2             0
+#define MB_V_2               0
 
 /* led row 3 */
-#define IR_MASK3             0x1ff        /* 0-9 */
-#define IR_V_3               7            /* Left */
+#define IR_V_3               9
 #define AC_MASK3             0xf
-#define AC_V_3               3            /* Left */
-#define IND_LAMP             0x4
-#define IX_MASK3             0xc
-#define IX_V_3               2           /* Right */
+#define AC_V_3               5            /* Left */
+#define IND_LAMP             0x10
+#define IX_MASK3             0xf
 
 /* led row 4 */
-#define IX_MASK4             3
-#define IX_V_4               14           /* left */
-#define MA_MASK4             0x3fff0
-#define MA_V_4               4            /* Right */
+// PC
 
 /* led row 5 */
-#define PROG_STOP_LAMP       0x0080
-#define USER_LAMP            0x0100
-#define MEM_STOP_LAMP        0x0200
-#define PI_REQ_MASK          0x007f
-#define MA_MASK5             0xf
-#define MA_V_5               12           /* Left */
+#define PI_IOB_MASK5         0x0f80
+#define PI_IOB_V_5           7            /* left */
+#define PROG_STOP_LAMP       0x04000
+#define USER_LAMP            0x08000
+#define MEM_STOP_LAMP        0x10000
 
 /* led row 6 */
-#define PC_MASK6             0x3fffc
-#define PC_V_6               2            /* right */
-
-/* led row 7 */
-#define PI_PRO_MASK7         0x007f
-#define PI_IOB_MASK7         0x0f80
-#define PI_IOB_V_7           7            /* left */
-#define PC_MASK7             0x0003
-#define PC_V_7               14           /* Left */
+#define PI_REQ_MASK          0x007f
+#define PI_PRO_MASK6         0x007f
+#define PI_PRO_V_6           7
+#define RUN_LAMP             0x04000
+#define PION_LAMP            0x08000
+#define PWR_LAMP             0x10000
+#define PI_LAMP              0x20000
+#define MI_LAMP              0x40000
 
 /* switch row 0 */
-#define SR_MASK_0            0xffff00000
-#define SR_V0                20           /* Left */
+#define SR_MASK_0            0777777000000ULL
+#define SR_V0                18           /* Left */
 
 /* switch row 1 */
-#define SR_MASK_1            0x0000ffff0
-#define SR_V1                4            /* Left */
+#define SR_MASK_1            0777777
+#define SR_V1                0            /* Left */
 
 /* Switch row 2 */
-#define SR_MASK_2            0x00000000f
-#define SR_V2                12           /* Right */
-#define DEP_THIS             0x0800       /* SW = 11 */
-#define DEP_NEXT             0x0400       /* SW = 10 */
+#define MA_SW_MASK_2         0777777
+#define MA_SW_V2             0
+
+/* Switch row 3 */
+#define EXAM_NEXT            0x0001        /* SW=0 */
+#define EXAM_THIS            0x0002        /* SW=1 */
+#define XCT_SW               0x0004        /* SW=2 Set xct_inst */
+#define RESET_SW             0x0008        /* SW=3 Call reset */
+#define STOP_SW              0x0010        /* SW=4 Set RUN = 0 */
+#define CONT_SW              0x0020        /* SW=5 call sim_instr */
+#define START_SW             0x0040        /* SW=6 Call reset then sim_instr */
+#define READ_SW              0x0080        /* SW=7 Boot function */
+#define DEP_THIS             0x0100        /* SW=8 */
+#define DEP_NEXT             0x0200        /* SW=9 */
+
+/* Switch row 4 */
 #define SING_INST            0x0200       /* set sing_inst */
 #define SING_CYCL            0x0100       /* Nop */
 #define PAR_STOP             0x0080       /* Nop */
@@ -182,22 +182,6 @@ int           rep_count;  /* Count down to repeat trigger */
 #define WRITE_SW             0x0004       /* adr_cond */
 #define ADR_STOP_SW          0x0002       /* adr_cond */
 #define ADR_BRK_SW           0x0001       /* adr_cond */
-
-/* Switch row 3 */
-#define MA_SW_MASK_3         0x3fffc
-#define MA_SW_V3             2             /* Left */
-
-/* Switch row 4 */
-#define MA_SW_MASK_4         0x00003
-#define MA_SW_V4             14            /* Right */
-#define EXAM_NEXT            0x0001        /* SW=0 */
-#define EXAM_THIS            0x0002        /* SW=1 */
-#define XCT_SW               0x0004        /* SW=2 Set xct_inst */
-#define RESET_SW             0x0008        /* SW=3 Call reset */
-#define STOP_SW              0x0010        /* SW=4 Set RUN = 0 */
-#define CONT_SW              0x0020        /* SW=5 call sim_instr */
-#define START_SW             0x0040        /* SW=6 Call reset then sim_instr */
-#define READ_SW              0x0080        /* SW=7 Boot function */
 
 struct {
       int   last_state;      /* last state */
@@ -525,37 +509,35 @@ void *blink(void *ptr)
          switch (row) {
          default:
          case 0:
-                new_sw |= (((uint64)sw) << SR_V0) | SR_MASK_0;
+                new_sw |= (((uint64)sw) << SR_V0) & SR_MASK_0;
                 break;
          case 1:
-                new_sw |= (((uint64)sw) << SR_V1) | SR_MASK_1;
+                new_sw |= (((uint64)sw) << SR_V1) & SR_MASK_1;
                 break;
          case 2:
-                new_sw |= (((uint64)sw) << SR_V2) | SR_MASK_2;
-                adr_cond = sw & (INST_FETCH|DATA_FETCH|WRITE_SW|ADR_STOP_SW|ADR_BRK_SW);
-                nxm_stop = (sw & NXM_STOP) != 0;
-                sing_inst_sw = (sw & SING_INST) != 0;
-                /* PAR_STOP handle special features */
-                /* SING_CYCL no function yet */
-                for (col = 10; col < 12; col++) {
-                    int state = (sw & (1 << col)) != 0;
-                     switch_state[col].last_state = state;
-                     switch_state[col].state = state;
-                     switch_state[col].debounce = switch_state[col].changed = 0;
-                }
-                repeat_sw = (sw & REP_SW) != 0;
+                new_as |= (((t_addr)sw) << MA_SW_V2) & MA_SW_MASK_2;
                 break;
          case 3:
-                new_as |= (((t_addr)sw) << MA_SW_V3) | MA_SW_MASK_3;
-                break;
-         case 4:
-                new_as |= (((t_addr)sw) << MA_SW_V4) | MA_SW_MASK_4;
                 for (col = 0; col < 8; col++) {
                     int state = (sw & (1 << col)) != 0;
                      switch_state[col].last_state = state;
                      switch_state[col].state = state;
                      switch_state[col].debounce = switch_state[col].changed = 0;
                 }
+                for (col = 8; col < 10; col++) {
+                    int state = (sw & (1 << col)) != 0;
+                     switch_state[col+2].last_state = state;
+                     switch_state[col+2].state = state;
+                     switch_state[col+2].debounce = switch_state[col].changed = 0;
+                }
+                break;
+         case 4:
+                adr_cond = sw & (INST_FETCH|DATA_FETCH|WRITE_SW|ADR_STOP_SW|ADR_BRK_SW);
+                nxm_stop = (sw & NXM_STOP) != 0;
+                sing_inst_sw = (sw & SING_INST) != 0;
+                /* PAR_STOP handle special features */
+                /* SING_CYCL no function yet */
+                repeat_sw = (sw & REP_SW) != 0;
                 break;
           }
           SW = new_sw;
@@ -583,66 +565,47 @@ void *blink(void *ptr)
         if (write(file_i2c, buffer, 3) != 3)
             printf("Failed i2c write (1).\n");
 
-        for (ledrow=0; ledrow<8; ledrow++) { /* 8 rows of LEDS get lit */
+        for (ledrow=0; ledrow<7; ledrow++) { /* 7 rows of LEDS get lit */
             switch (ledrow) {
             default:
             case 0:
-                    leds = (((MI_flag)? MI : MB) & MB_MASK0) >> MB_V_0;
+	            leds = (MI_flag ? MI : MB) & 0777777;
                     break;
             case 1:
-                    leds = (((MI_flag)? MI : MB) & MB_MASK1) >> MB_V_1;
+	            leds = ((MI_flag ? MI : MB) >> 18) & 0777777;
                     break;
             case 2:
-                    leds = PWR_LAMP;
-                    leds |= (RUN) ? RUN_LAMP : 0;
-                    leds |= (pi_enable) ? PION_LAMP : 0;
-                    leds |= (PIE & PI_ENB_MASK);
-                    leds |= (((MI_flag)? MI : MB) & MB_MASK2) << MB_V_2;
-                    leds |= (MI_flag) ? PI_LAMP : MI_LAMP;
+	            leds = AB & 0777777;
                     break;
 
             case 3:
-                    leds = (IR & IR_MASK3) << IR_V_3;
+	            leds = IR << IR_V_3;
                     leds |= (AC & AC_MASK3) << AC_V_3;
                     leds |= (IND) ? IND_LAMP : 0;
-                    leds |= (IX & IX_MASK3) >> IX_V_3;
+                    leds |= IX & IX_MASK3;
                     break;
 
             case 4:
-                    leds = (IX & IX_MASK4) << IX_V_4;
-                    if (par_stop) {
-                        leds |= (rdrin_dev & MA_MASK4) >> MA_V_4;
-                        leds |= rep_rate << 12;
-                        leds |= MI_disable << 10;
-                    } else {
-                        leds |= (AB & MA_MASK4) >> MA_V_4;
-                    }
+		    leds = PC & 0777777;
                     break;
 
             case 5:
-                    if (par_stop) {
-                        leds = (rdrin_dev & MA_MASK5) << MA_V_5;
-                    } else {
-                        leds = (AB & MA_MASK5) << MA_V_5;
-                    }
+                    leds = watch_stop ? MEM_STOP_LAMP: 0;
                     leds |= (FLAGS & USER) ? USER_LAMP : 0;
-                    leds |= (PIR & PI_REQ_MASK);
-                    leds |= (prog_stop) ? PROG_STOP_LAMP: 0;
-                    leds |= (watch_stop) ? MEM_STOP_LAMP: 0;
+                    leds |= prog_stop ? PROG_STOP_LAMP: 0;
+                    leds |= (IOB_PI & PI_IOB_MASK5) << PI_IOB_V_5;
+                    leds |= PIE & PI_ENB_MASK;
                     break;
 
             case 6:
-                    leds = (PC & PC_MASK6) >> PC_V_6;
-                    break;
-
-            case 7:
-                    leds = (PC & PC_MASK7) << PC_V_7;
-                    leds |= (PIH & PI_PRO_MASK7);
-                    leds |= (IOB_PI & PI_IOB_MASK7) << PI_IOB_V_7;
+		    leds = MI_flag ? PI_LAMP : MI_LAMP;
+                    leds |= PWR_LAMP;
+                    leds |= pi_enable ? PION_LAMP : 0;
+                    leds |= RUN ? RUN_LAMP : 0;
+                    leds |= (PIH & PI_PRO_MASK6) << PI_PRO_V_6;
+                    leds |= PIR & PI_REQ_MASK;
                     break;
             }
-
-            leds = ~leds;
 
             /* ----- set MCP23017 IO pin values */
             /*       (determines which of the 16 LEDs will light up) ----- */
@@ -698,7 +661,19 @@ void *blink(void *ptr)
                         new_sw |= (((uint64)sw) << SR_V1) & SR_MASK_1;
                         break;
                 case 2:
-                        new_sw |= (((uint64)sw) << SR_V2) & SR_MASK_2;
+                        new_as |= (((t_addr)sw) << MA_SW_V2) & MA_SW_MASK_2;
+                        break;
+                case 3:
+                        for (col = 0; col < 8; col++) {
+                            int state = (sw & (1 << col)) != 0;
+                            debounce_sw(state, col);
+                        }
+                        for (col = 8; col < 10; col++) {
+                            int state = (sw & (1 << col)) != 0;
+                            debounce_sw(state, col+2);
+                        }
+                        break;
+                case 4:
                         adr_cond = sw & (INST_FETCH|DATA_FETCH|WRITE_SW|
                                                 ADR_STOP_SW|ADR_BRK_SW);
                         nxm_stop = (sw & NXM_STOP) != 0;
@@ -706,21 +681,7 @@ void *blink(void *ptr)
                         /* PAR_STOP handle special features */
                         par_stop = (sw & PAR_STOP) != 0;
                         /* SING_CYCL no function yet */
-                        for (col = 10; col < 12; col++) {
-                            int state = (sw & (1 << col)) != 0;
-                            debounce_sw(state, col);
-                        }
                         repeat_sw = (sw & REP_SW) != 0;
-                        break;
-                case 3:
-                        new_as |= (((t_addr)sw) << MA_SW_V3) & MA_SW_MASK_3;
-                        break;
-                case 4:
-                        new_as |= (((t_addr)sw) << MA_SW_V4) & MA_SW_MASK_4;
-                        for (col = 0; col < 8; col++) {
-                            int state = (sw & (1 << col)) != 0;
-                            debounce_sw(state, col);
-                        }
                         break;
                 }
             }
