@@ -50,12 +50,22 @@ const char *cty_description (DEVICE *dptr);
 #define KEY_BSY           0100
 #define KEY_TST          04000
 #define CTY_DEVNUM        0120
+/* MIT AI lab extensions. */
+#define PORT_NUMBER    0070000
+#define ALL_INTERRUPT  0100000
+#define PORT_SELECT    0400000
+#define MAX_PORTS      8
 
-#define STATUS            u3
-#define DATA              u4
 #define PIA               u5
+#define PORT              (cty_unit[0].u6)
+#define DATA(unit)        (((unsigned char *)((unit)->up7))[PORT])
+#define STATUS            (cty_status[PORT])
+#define STATUS0           (cty_status[0])
 
 t_stat cty_devio(uint32 dev, uint64 *data);
+
+static unsigned char ctyi_data[MAX_PORTS], ctyo_data[MAX_PORTS];
+static uint32 cty_status[MAX_PORTS];
 
 DIB cty_dib = { CTY_DEVNUM, 1, cty_devio, NULL};
 
@@ -91,40 +101,44 @@ t_stat cty_devio(uint32 dev, uint64 *data) {
      uint64     res;
      switch(dev & 3) {
      case CONI:
-        res = cty_unit[0].PIA | (cty_unit[0].STATUS & (TEL_RDY | TEL_BSY));
-        res |= cty_unit[1].STATUS & (KEY_RDY | KEY_BSY);
-        res |= cty_unit[0].STATUS & KEY_TST;
+        res = cty_unit[0].PIA | (STATUS & (TEL_RDY | TEL_BSY));
+        res |= STATUS & (KEY_RDY | KEY_BSY);
+        res |= STATUS & KEY_TST;
         *data = res;
         sim_debug(DEBUG_CONI, &cty_dev, "CTY %03o CONI %06o\n", dev, (uint32)*data);
         break;
      case CONO:
          res = *data;
+         if (res & PORT_SELECT)
+             PORT = (res & PORT_NUMBER) >> 12;
+         STATUS0 &= ~ALL_INTERRUPT;
+         STATUS0 |= res & ALL_INTERRUPT;
          cty_unit[0].PIA = res & 07;
          cty_unit[1].PIA = res & 07;
          cty_unit[0].PIA &= ~(KEY_TST);
-         cty_unit[0].STATUS &= ~((res >> 4) & (TEL_RDY | TEL_BSY));
-         cty_unit[0].STATUS |= (res & (TEL_RDY | TEL_BSY | KEY_TST));
-         cty_unit[1].STATUS &= ~((res >> 4) & (KEY_RDY | KEY_BSY));
-         cty_unit[1].STATUS |= (res & (KEY_RDY | KEY_BSY));
-         if ((cty_unit[0].STATUS & TEL_RDY) || (cty_unit[1].STATUS & KEY_RDY))
+         STATUS &= ~((res >> 4) & (TEL_RDY | TEL_BSY));
+         STATUS |= (res & (TEL_RDY | TEL_BSY | KEY_TST));
+         STATUS &= ~((res >> 4) & (KEY_RDY | KEY_BSY));
+         STATUS |= (res & (KEY_RDY | KEY_BSY));
+         if (STATUS & (TEL_RDY | KEY_RDY))
              set_interrupt(dev, cty_unit[0].PIA);
          else
              clr_interrupt(dev);
          sim_debug(DEBUG_CONO, &cty_dev, "CTY %03o CONO %06o\n", dev, (uint32)*data);
          break;
      case DATAI:
-         res = cty_unit[1].DATA & 0xff;
-         cty_unit[1].STATUS &= ~KEY_RDY;
-         if ((cty_unit[0].STATUS & TEL_RDY) == 0)
+         res = DATA(&cty_unit[1]) & 0xff;
+         STATUS &= ~KEY_RDY;
+         if ((STATUS & TEL_RDY) == 0)
              clr_interrupt(dev);
          *data = res;
          sim_debug(DEBUG_DATAIO, &cty_dev, "CTY %03o DATAI %06o\n", dev, (uint32)*data);
          break;
     case DATAO:
-         cty_unit[0].DATA = *data & 0x7f;
-         cty_unit[0].STATUS &= ~TEL_RDY;
-         cty_unit[0].STATUS |= TEL_BSY;
-         if ((cty_unit[1].STATUS & KEY_RDY) == 0)
+         DATA(&cty_unit[0]) = *data & 0x7f;
+         STATUS &= ~TEL_RDY;
+         STATUS |= TEL_BSY;
+         if ((STATUS & KEY_RDY) == 0)
              clr_interrupt(dev);
          sim_activate(&cty_unit[0], cty_unit[0].wait);
          sim_debug(DEBUG_DATAIO, &cty_dev, "CTY %03o DATAO %06o\n", dev, (uint32)*data);
@@ -137,38 +151,42 @@ t_stat cty_devio(uint32 dev, uint64 *data) {
 
 t_stat ctyo_svc (UNIT *uptr)
 {
+    unsigned char *data = (unsigned char *)uptr->up7;
     t_stat  r;
     int32   ch;
 
-    if (uptr->DATA != 0) {
-        ch = sim_tt_outcvt ( uptr->DATA, TT_GET_MODE (uptr->flags)) ;
+    if (data[0] != 0) {
+        ch = sim_tt_outcvt ( data[0], TT_GET_MODE (uptr->flags)) ;
         if ((r = sim_putchar_s (ch)) != SCPE_OK) {   /* output; error? */
             sim_activate (uptr, uptr->wait);               /* try again */
             return ((r == SCPE_STALL)? SCPE_OK: r);        /* !stall? report */
         }
     }
-    uptr->STATUS &= ~TEL_BSY;
-    uptr->STATUS |= TEL_RDY;
-    set_interrupt(CTY_DEVNUM, uptr->PIA);
+    STATUS &= ~TEL_BSY;
+    STATUS |= TEL_RDY;
+    if ((STATUS0 && ALL_INTERRUPT) || PORT == 0)
+        set_interrupt(CTY_DEVNUM, uptr->PIA);
     return SCPE_OK;
 }
 
 t_stat ctyi_svc (UNIT *uptr)
 {
+    unsigned char *data = (unsigned char *)uptr->up7;
     int32 ch;
 
     sim_clock_coschedule (uptr, tmxr_poll);
                                                        /* continue poll */
-    if (uptr->STATUS & KEY_RDY)
+    if (STATUS & KEY_RDY)
         return SCPE_OK;
     if ((ch = sim_poll_kbd ()) < SCPE_KFLAG)           /* no char or error? */
         return ch;
     if (ch & SCPE_BREAK)                               /* ignore break */
         return SCPE_OK;
-    uptr->DATA = 0177 & sim_tt_inpcvt(ch, TT_GET_MODE (uptr->flags));
-    uptr->DATA = ch & 0177;
-    uptr->STATUS |= KEY_RDY;
-    set_interrupt(CTY_DEVNUM, uptr->PIA);
+    data[0] = 0177 & sim_tt_inpcvt(ch, TT_GET_MODE (uptr->flags));
+    data[0] = ch & 0177;
+    STATUS |= KEY_RDY;
+    if ((STATUS0 && ALL_INTERRUPT) || PORT == 0)
+        set_interrupt(CTY_DEVNUM, uptr->PIA);
     return SCPE_OK;
 }
 
@@ -176,8 +194,12 @@ t_stat ctyi_svc (UNIT *uptr)
 
 t_stat cty_reset (DEVICE *dptr)
 {
-    cty_unit[0].STATUS &= ~(TEL_RDY | TEL_BSY);
-    cty_unit[1].STATUS &= ~(KEY_RDY | KEY_BSY);
+    int i;
+    PORT = 0;
+    cty_unit[0].up7 = ctyi_data;
+    cty_unit[1].up7 = ctyo_data;
+    for (i = 0; i < MAX_PORTS; i++)
+        cty_status[i] &= ~(TEL_RDY | TEL_BSY | KEY_RDY | KEY_BSY);
     clr_interrupt(CTY_DEVNUM);
     sim_clock_coschedule (&cty_unit[1], tmxr_poll);
 
