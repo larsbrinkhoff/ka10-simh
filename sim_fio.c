@@ -678,6 +678,11 @@ else
 return SCPE_OK;
 }
 
+t_stat sim_shmem_open (const char *name, size_t size, SHMEM **shmem, void **addr)
+{
+return sim_messagef (SCPE_NOFNC, "sim_shmem_open not implemented on Windows");
+}
+
 void sim_shmem_close (SHMEM *shmem)
 {
 if (shmem == NULL)
@@ -870,6 +875,48 @@ return SCPE_OK;
 *shmem = NULL;
 return sim_messagef (SCPE_NOFNC, "Shared memory not available - Missing shm_open() API\n");
 #endif
+}
+
+t_stat sim_shmem_fopen (const char *name, size_t size, SHMEM **shmem, void **addr)
+{
+*shmem = (SHMEM *)calloc (1, sizeof(**shmem));
+mode_t orig_mask;
+
+*addr = NULL;
+if (*shmem == NULL)
+    return SCPE_MEM;
+(*shmem)->shm_name = (char *)calloc (1, 1 + strlen (name));
+if ((*shmem)->shm_name == NULL) {
+    free (*shmem);
+    *shmem = NULL;
+    return SCPE_MEM;
+    }
+
+strcpy ((*shmem)->shm_name, name);
+(*shmem)->shm_base = MAP_FAILED;
+(*shmem)->shm_size = size;
+(*shmem)->shm_fd = open ((*shmem)->shm_name, O_CREAT|O_RDWR, 0600);
+if ((*shmem)->shm_fd == -1) {
+    int last_errno = errno;
+    sim_shmem_close (*shmem);
+    *shmem = NULL;
+    return sim_messagef (SCPE_OPENERR, "Can't shm_open() a %d byte shared memory segment '%s' - errno=%d - %s\n", (int)size, name, last_errno, strerror (last_errno));
+    }
+if (ftruncate((*shmem)->shm_fd, size)) {
+    sim_shmem_close (*shmem);
+    *shmem = NULL;
+    return SCPE_OPENERR;
+    }
+(*shmem)->shm_base = mmap(NULL, (*shmem)->shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, (*shmem)->shm_fd, 0);
+if ((*shmem)->shm_base == MAP_FAILED) {
+    int last_errno = errno;
+
+    sim_shmem_close (*shmem);
+    *shmem = NULL;
+    return sim_messagef (SCPE_OPENERR, "Shared Memory '%s' mmap() failed. errno=%d - %s\n", name, last_errno, strerror (last_errno));
+    }
+*addr = (*shmem)->shm_base;
+return SCPE_OK;
 }
 
 void sim_shmem_close (SHMEM *shmem)
