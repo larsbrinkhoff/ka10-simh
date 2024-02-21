@@ -25,12 +25,31 @@
 
 #include "kx10_defs.h"
 #include "sim_tmxr.h"
+#include <signal.h>
+#include <stdatomic.h>
+#include <sys/mman.h>
 
 #ifndef NUM_DEVS_TEN11
 #define NUM_DEVS_TEN11 0
 #endif
 
 #if (NUM_DEVS_TEN11 > 0)
+
+#define UNIMOBY (128*1024)
+
+typedef struct {
+	atomic_uint_fast32_t pdp10_pid;
+	atomic_uint_fast8_t pdp10_command;
+	atomic_uint_fast32_t pdp10_address;
+	atomic_uint_fast16_t pdp10_data;
+
+	atomic_uint_fast32_t pdp11_pid;
+	atomic_uint_fast8_t pdp11_status;
+	atomic_uint_fast16_t pdp11_data;
+	volatile uint8 pdp11_core[UNIMOBY];
+
+	atomic_uint_fast16_t memory[UNIMOBY];
+} shared_memory_t;
 
 /* Rubin 10-11 pager. */
 static uint64 ten11_pager[256];
@@ -41,6 +60,10 @@ t_addr ten11_end  = 04000000;
 
 /* Number of Unibuses. */
 #define UNIBUSES        8
+
+/* Pointers to shared memory. */
+static shared_memory_t *ten11_mem[UNIBUSES] = { 0 };
+static sigset_t sigusr2_set;
 
 /* Physical address of 10-11 control page. */
 #define T11CPA          0776000  //Offset inside TEN11 moby.
@@ -74,8 +97,15 @@ static t_stat ten11_show_base (FILE *st, UNIT *uptr, int32 val, CONST void *desc
 static t_stat ten11_attach_help (FILE *st, DEVICE *dptr, UNIT *uptr, int32 flag, const char *cptr);
 static const char *ten11_description (DEVICE *dptr);
 
-UNIT ten11_unit[1] = {
+UNIT ten11_unit[UNIBUSES] = {
   { UDATA (&ten11_svc, UNIT_IDLE|UNIT_ATTABLE, 0), 1000 },
+  { UDATA (NULL, UNIT_IDLE|UNIT_ATTABLE, 0), 0 },
+  { UDATA (NULL, UNIT_IDLE|UNIT_ATTABLE, 0), 0 },
+  { UDATA (NULL, UNIT_IDLE|UNIT_ATTABLE, 0), 0 },
+  { UDATA (NULL, UNIT_IDLE|UNIT_ATTABLE, 0), 0 },
+  { UDATA (NULL, UNIT_IDLE|UNIT_ATTABLE, 0), 0 },
+  { UDATA (NULL, UNIT_IDLE|UNIT_ATTABLE, 0), 0 },
+  { UDATA (NULL, UNIT_IDLE|UNIT_ATTABLE, 0), 0 }
 };
 
 static REG ten11_reg[] = {
@@ -100,7 +130,7 @@ static DEBTAB ten11_debug[] = {
 
 DEVICE ten11_dev = {
   "TEN11", ten11_unit, ten11_reg, ten11_mod,
-  1, 8, 16, 2, 8, 16,
+  8, 8, 16, 2, 8, 16,
   NULL,                                               /* examine */
   NULL,                                               /* deposit */
   &ten11_reset,                                       /* reset */
@@ -126,15 +156,18 @@ static t_stat ten11_reset (DEVICE *dptr)
 {
   sim_debug(DBG_TRC, dptr, "ten11_reset()\n");
 
-  ten11_unit[0].flags |= UNIT_ATTABLE | UNIT_IDLE;
-  ten11_desc.packet = TRUE;
-  ten11_desc.notelnet = TRUE;
-  ten11_desc.buffered = 2048;
-
-  if (ten11_unit[0].flags & UNIT_ATT)
-    sim_activate_abs (&ten11_unit[0], 0);
-  else
-    sim_cancel (&ten11_unit[0]);
+  if (0) {
+    ten11_desc.packet = TRUE;
+    ten11_desc.notelnet = TRUE;
+    ten11_desc.buffered = 2048;
+    if (ten11_unit[0].flags & UNIT_ATT)
+      sim_activate_abs (&ten11_unit[0], 0);
+    else
+      sim_cancel (&ten11_unit[0]);
+  } else {
+    if (sim_switches & SWMASK('P'))
+      memset(ten11_mem, 0, sizeof ten11_mem);
+  }
 
   return SCPE_OK;
 }
@@ -145,14 +178,36 @@ static t_stat ten11_attach (UNIT *uptr, CONST char *cptr)
 
   if (!cptr || !*cptr)
     return SCPE_ARG;
-  if (!(uptr->flags & UNIT_ATTABLE))
-    return SCPE_NOATT;
-  r = tmxr_attach_ex (&ten11_desc, uptr, cptr, FALSE);
-  if (r != SCPE_OK)                                       /* error? */
-    return r;
-  sim_debug(DBG_TRC, &ten11_dev, "activate connection\n");
-  sim_activate_abs (uptr, 0);    /* start poll */
-  uptr->flags |= UNIT_ATT;
+  if (0) {
+    if (!(uptr->flags & UNIT_ATTABLE))
+      return SCPE_NOATT;
+    r = tmxr_attach_ex (&ten11_desc, uptr, cptr, FALSE);
+    if (r != SCPE_OK)                                       /* error? */
+      return r;
+    sim_debug(DBG_TRC, &ten11_dev, "activate connection\n");
+    sim_activate_abs (uptr, 0);    /* start poll */
+    uptr->flags |= UNIT_ATT;
+  } else {
+    int u = uptr - ten11_unit;
+    int fd = open(cptr, O_CREAT|O_RDWR, 0600);
+    if (fd == -1 || ftruncate(fd, sizeof(shared_memory_t)) == -1) {
+      close(fd);
+      return sim_messagef(SCPE_NOATT, "Error opening %s\n", cptr);
+    }
+    ten11_mem[u] = mmap(NULL, sizeof(shared_memory_t),
+			PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+    if (ten11_mem[u] == MAP_FAILED) {
+      ten11_mem[u] = NULL;
+      close(fd);
+      return sim_messagef(SCPE_NOATT, "Error mapping %s\n", cptr);
+    }
+    uptr->flags |= UNIT_ATT;
+    atomic_store(&ten11_mem[u]->pdp10_pid, getpid());
+
+    sigemptyset(&sigusr2_set);
+    sigaddset(&sigusr2_set, SIGUSR2);
+    sigprocmask(SIG_BLOCK, &sigusr2_set, NULL);
+  }
   return SCPE_OK;
 }
 
@@ -232,7 +287,7 @@ static int error (int unibus, const char *message)
   return -1;
 }
 
-static int transaction (int unibus, unsigned char *request, unsigned char *response)
+static int network_transaction (int unibus, unsigned char *request, unsigned char *response)
 {
   const uint8 *ten11_request;
   size_t size;
@@ -256,7 +311,7 @@ static int transaction (int unibus, unsigned char *request, unsigned char *respo
   return 0;
 }
 
-static int read_word (int unibus, t_addr addr, int *data)
+static int network_read_word (int unibus, t_addr addr, int *data)
 {
   unsigned char request[8];
   unsigned char response[8];
@@ -274,7 +329,7 @@ static int read_word (int unibus, t_addr addr, int *data)
   build (request, (addr >> 8) & 0377);
   build (request, (addr) & 0377);
 
-  if (transaction (unibus, request, response) == -1) {
+  if (network_transaction (unibus, request, response) == -1) {
     /* Network error. */
     *data = 0;
     return 0;
@@ -299,6 +354,50 @@ static int read_word (int unibus, t_addr addr, int *data)
       return error (unibus, "Protocol error");
     }
 
+  return 0;
+}
+
+static void shmem_transaction (shared_memory_t *mem, int command, t_addr addr)
+{
+  int sig;
+  siginfo_t si;
+  struct timespec ts;
+
+  atomic_store(&mem->pdp10_command, command);
+  atomic_store(&mem->pdp10_address, addr);
+  atomic_store(&mem->pdp11_data, 0);
+  if (kill(atomic_load(&mem->pdp11_pid), SIGUSR1) != 0) {
+    if (errno == ESRCH) {
+      atomic_store(&mem->pdp11_pid, 0);
+      return;
+    }
+    fprintf(stderr, "TEN11 signal error: %s\n", strerror(errno));
+  }
+
+  ts.tv_sec = 1;
+  ts.tv_nsec = 0;
+  if (sigtimedwait(&sigusr2_set, &si, &ts) <= 0) {
+    if (errno == EAGAIN)
+      fprintf(stderr, "TEN11 no USR2\n");
+    else
+      fprintf(stderr, "TEN11 sigwait error: %s\n", strerror(errno));
+    fflush(stderr);
+  }
+}
+
+static int shmem_read_word (int unibus, t_addr addr, int *data)
+{
+  sim_interval -= UNIBUS_MEM_CYCLE;
+
+  if (ten11_mem[unibus] == NULL ||
+      atomic_load(&ten11_mem[unibus]->pdp11_pid) == 0)
+    *data = 0;
+  else if (ten11_mem[unibus]->pdp11_core[addr])
+    *data = atomic_load(&ten11_mem[unibus]->memory[addr>>1]);
+  else {
+    shmem_transaction(ten11_mem[unibus], DATI, addr);
+    *data = atomic_load(&ten11_mem[unibus]->pdp11_data);
+  }
   return 0;
 }
 
@@ -336,8 +435,8 @@ int ten11_read (t_addr addr, uint64 *data)
     uaddr = ((mapping & T11ADDR) >> 10) + offset;
     uaddr <<= 2;
 
-    read_word (unibus, uaddr, &word1);
-    read_word (unibus, uaddr + 2, &word2);
+    shmem_read_word (unibus, uaddr, &word1);
+    shmem_read_word (unibus, uaddr + 2, &word2);
     *data = ((uint64)word1 << 20) | (word2 << 4);
     
     sim_debug (DBG_TRC, &ten11_dev,
@@ -347,7 +446,7 @@ int ten11_read (t_addr addr, uint64 *data)
   return 0;
 }
 
-static int write_word (int unibus, t_addr addr, uint16 data)
+static int network_write_word (int unibus, t_addr addr, uint16 data)
 {
   unsigned char request[8];
   unsigned char response[8];
@@ -366,7 +465,7 @@ static int write_word (int unibus, t_addr addr, uint16 data)
   build (request, (data >> 8) & 0377);
   build (request, (data) & 0377);
 
-  transaction (unibus, request, response);
+  network_transaction (unibus, request, response);
 
   switch (response[0])
     {
@@ -382,6 +481,22 @@ static int write_word (int unibus, t_addr addr, uint16 data)
       return error (unibus, "Protocol error");
     }
 
+  return 0;
+}
+
+static int shmem_write_word (int unibus, t_addr addr, uint16 data)
+{
+  sim_interval -= UNIBUS_MEM_CYCLE;
+
+  if (ten11_mem[unibus] == NULL ||
+      atomic_load(&ten11_mem[unibus]->pdp11_pid) == 0)
+    ;
+  else if (ten11_mem[unibus]->pdp11_core[addr])
+    atomic_store(&ten11_mem[unibus]->memory[addr>>1], data);
+  else {
+    atomic_store(&ten11_mem[unibus]->pdp10_data, data);
+    shmem_transaction(ten11_mem[unibus], DATO, addr);
+  }
   return 0;
 }
 
@@ -428,9 +543,9 @@ int ten11_write (t_addr addr, uint64 data)
                unibus, uaddr, data);
 
     if ((data & 010) == 0)
-      write_word (unibus, uaddr, (data >> 20) & 0177777);
+      shmem_write_word (unibus, uaddr, (data >> 20) & 0177777);
     if ((data & 004) == 0)
-      write_word (unibus, uaddr + 2, (data >> 4) & 0177777);
+      shmem_write_word (unibus, uaddr + 2, (data >> 4) & 0177777);
   }
   return 0;
 }

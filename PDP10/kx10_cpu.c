@@ -749,7 +749,7 @@ DEVICE cpu_dev = {
 #endif
 #if ITS
 #define QITS            (cpu_unit[0].flags & UNIT_ITSPAGE)
-#define QTEN11          (ten11_unit[0].flags & UNIT_ATT)
+#define QTEN11          ((ten11_dev.flags & DEV_DIS) == 0)
 #define QAUXCPU         (auxcpu_unit[0].flags & UNIT_ATT)
 #else
 #if KL_ITS | KS_ITS
