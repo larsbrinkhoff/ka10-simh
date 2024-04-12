@@ -60,6 +60,9 @@ static UNIT crt_unit[CRT_LINES + 1] = {
 static UNIT *const crt_rx_unit = &crt_unit[0];
 static UNIT *const crt_tx_unit = &crt_unit[1];
 
+static int current_x[CRT_LINES];
+static int current_y[CRT_LINES];
+
 DEVICE crt_dev = {
   "CRT", crt_unit, NULL, NULL,
   CRT_LINES + 1, 8, 16, 1, 8, 16,
@@ -271,6 +274,8 @@ static t_stat crt_reset (DEVICE *dptr)
     memset (head, 0, sizeof head);
     memset (tail, 0, sizeof tail);
     memset (input_idx, 0, sizeof input_idx);
+    memset (current_x, 0, sizeof current_x);
+    memset (current_y, 0, sizeof current_y);
   } else if (dptr->flags & DEV_DIS) {
     sim_cancel (crt_rx_unit);
   } else {
@@ -314,9 +319,6 @@ static void transmit (int line, int x)
   }
 }
 
-static int current_x = -1;
-static int current_y = -1;
-
 void crt_point (int line, int x, int y)
 {
   int diff, dx, dy;
@@ -338,8 +340,8 @@ void crt_point (int line, int x, int y)
     sim_debug (DEBUG_EXP, &crt_dev, "Display %d point outside CRT.\n", line);
     return;
   }
-  dx = x - current_x;
-  dy = y - current_y;
+  dx = x - current_x[line];
+  dy = y - current_y[line];
   if (dx < 128 && dx >= -128 && dy < 128 && dy >= -128) {
     transmit (line, 5);
     transmit (line, dx);
@@ -351,8 +353,8 @@ void crt_point (int line, int x, int y)
     transmit (line, y >> 8);
     transmit (line, y);
   }
-  current_x = x;
-  current_y = y;
+  current_x[line] = x;
+  current_y[line] = y;
 }
 
 void crt_line (int line, int x1, int y1, int x2, int y2)
@@ -380,7 +382,7 @@ void crt_line (int line, int x1, int y1, int x2, int y2)
   }
   dx = x2 - x1;
   dy = y2 - y1;
-  if (x1 == current_x && y1 == current_y
+  if (x1 == current_x[line] && y1 == current_y[line]
       && dx < 128 && dx >= -128 && dy < 128 && dy >= -128) {
     transmit (line, 4);
     transmit (line, dx);
@@ -396,8 +398,8 @@ void crt_line (int line, int x1, int y1, int x2, int y2)
     transmit (line, y2 >> 8);
     transmit (line, y2);
   }
-  current_x = x2;
-  current_y = y2;
+  current_x[line] = x2;
+  current_y[line] = y2;
 }
 
 void crt_info (void (*callback) (int))
