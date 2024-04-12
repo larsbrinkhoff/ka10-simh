@@ -66,6 +66,9 @@
 #include "type340.h"                 /* interface definitions */
 #include "type340cmd.h"              /* 340 command definitions */
 
+extern void crt_point (int line, int x, int y);
+extern void crt_line (int line, int x1, int y1, int x2, int y2);
+
 /*
  * sub-options, under "#if"
  * (make runtime selectable????!)
@@ -248,6 +251,7 @@ point(int x, int y, int seq)
         return 0;
     }
 
+    crt_point(0, x, y);
 #ifndef TY340_NODISPLAY
     if (display_point(x, y, i, 0)) {
         /*
@@ -548,6 +552,7 @@ vector(int i, int sy, int dy, int sx, int dx)
     }
 
     DEBUGF(("vector i%d (%d,%d) to (%d,%d)\r\n", i, x0, y0, x1, y1));
+    crt_line(0, x0, y0, x1, y1);
     if (i)                              /* XXX need OLD value??? */
         lineTwoStep(x0, y0, x1, y1);
 
