@@ -475,6 +475,7 @@ struct imp_device {
     struct imp_stats  stats;
     uint8             sbuffer[ETH_FRAME_SIZE]; /* Temp send buffer */
     uint8             rbuffer[ETH_FRAME_SIZE]; /* Temp receive buffer */
+    int               rpos;
     ETH_DEV           etherface;
     ETH_QUE           ReadQ;
     int               imp_error;
@@ -482,6 +483,7 @@ struct imp_device {
     int               rfnm_count;              /* Number of pending RFNM packets */
     int               pia;                     /* PIA channels */
     struct arp_entry  arp_table[IMP_ARPTAB_SIZE];
+    int32             link;                    /* Link for UDP. */
 } imp_data;
 
 extern int32 tmxr_poll;
@@ -540,6 +542,16 @@ t_stat         imp_help (FILE *st, DEVICE *dptr, UNIT *uptr, int32 flag, CONST c
 const char     *imp_description (DEVICE *dptr);
 static char    *ipv4_inet_ntoa(struct in_addr ip);
 static int     ipv4_inet_aton(const char *str, struct in_addr *inp);
+
+#define MAXDATA 16348
+extern t_stat udp_create (DEVICE *dptr, const char *premote, int32 *pln);
+extern t_stat udp_release (DEVICE *dptr, int32 link);
+extern t_stat udp_send(DEVICE *dptr, int32 link, uint16 *pdata, uint16 count);
+extern int32 udp_receive (DEVICE *dptr, int32 link, uint16 *pdata, uint16 maxbuf);
+// Last-IMP-Bit is implemented as an out-of-band flag in UDP_PACKET
+#define PFLG_FINAL 00001
+// Host or IMP Ready bit.
+#define PFLG_READY 00002
 
 #if KS
 uint16        imp_icsr;
@@ -860,6 +872,13 @@ static void check_interrupts (UNIT *uptr)
        set_interrupt_mpx(DEVNUM, imp_data.pia >> 3, imp_mpx_lvl + 1);
 }
 
+static void imp_send_host_ready(DEVICE *dptr, struct imp_device *imp)
+{
+    t_stat r;
+    uint16 data = PFLG_READY;
+    r = udp_send (dptr, imp->link, &data, 1);
+}
+
 t_stat imp_devio(uint32 dev, uint64 *data)
 {
     DEVICE *dptr = &imp_dev;
@@ -893,8 +912,11 @@ t_stat imp_devio(uint32 dev, uint64 *data)
              }
              if (*data & IMPHEC) { /* Clear host error. */
                  /* Only if there has been a CONI lately. */
-                 if (last_coni - sim_gtime() < CONI_TIMEOUT)
+                 if (last_coni - sim_gtime() < CONI_TIMEOUT) {
+                     if (uptr->STATUS & IMPHER)
+                         imp_send_host_ready(dptr, &imp_data);
                      uptr->STATUS &= ~IMPHER;
+                 }
              }
              if (*data & IMIIHE) /* Inhibit interrupt on host error. */
                  uptr->STATUS |= IMPIHE;
@@ -1389,6 +1411,33 @@ imp_packet_in(struct imp_device *imp)
    int                     n;
    int                     pad;
 
+   uint16 data[MAXDATA];
+   int i, j;
+   int32 count = udp_receive(&imp_dev, imp->link, data, MAXDATA);
+   if (count > 0) {
+       if (data[0] & PFLG_READY)
+           imp_unit[0].STATUS |= IMPR;
+       else
+           imp_unit[0].STATUS &= IMPR;
+
+       if (count == 1)
+           return;
+       for (i = 1, j = imp->rpos; i < count; i++, j+=2) {
+           imp->rbuffer[j] = data[i] >> 8;
+           imp->rbuffer[j+1] = data[i] & 0xFF;
+       }
+       imp->rpos = j;
+       if ((data[0] & PFLG_FINAL) == 0)
+           return;
+       imp_unit[0].STATUS |= IMPIB;
+       imp_unit[0].IPOS = 0;
+       imp_unit[0].ILEN = 8*j;
+       imp->rpos = 0;
+       if (!sim_is_active(&imp_unit[0]))
+           sim_activate(&imp_unit[0], 100);
+       return;
+   }
+
    if (eth_read (&imp_data.etherface, &read_buffer, NULL) <= 0) {
        /* Any pending packet notifications? */
        if (imp->rfnm_count != 0) {
@@ -1609,6 +1658,26 @@ imp_packet_in(struct imp_device *imp)
 }
 
 void
+imp_send_udp (struct imp_device *imp, int len)
+{
+    static uint16 data[MAXDATA];
+    t_stat r;
+    int i, j;
+
+    data[0] = PFLG_FINAL;
+    if ((imp_unit[0].STATUS & IMPHER) == 0)
+        data[0] |= PFLG_READY;
+
+    for (i = 0, j = 0; i < len/2; i++, j+=2) {
+      data[i+1] = (imp->sbuffer[j] << 8) + imp->sbuffer[j+1];
+    }
+    if (len&1) {
+      data[i+1] = imp->sbuffer[j] << 8;
+    }
+    r = udp_send (&imp_dev, imp->link, data, ((uint16)len+3)/2);
+}
+
+void
 imp_send_packet (struct imp_device *imp, int len)
 {
     ETH_PACK   write_buffer;
@@ -1618,6 +1687,15 @@ imp_send_packet (struct imp_device *imp, int len)
     int        st;
     int        lk;
     int        mt;
+
+    /* TCP/IP must use packet type 15 and link 0233.
+       Anything else must be an Arpanet NCP message. */
+    if (((imp->sbuffer[0] & 0xF) != 15) ||
+        imp->sbuffer[8] != 0233) {
+        imp_send_udp(imp, len);
+        sim_activate(uptr, tmxr_poll);
+        return;
+    }
 
     lk = 0;
     n = len;
@@ -1629,7 +1707,6 @@ imp_send_packet (struct imp_device *imp, int len)
     case 0x0:
        mt = 0;
        st = imp->sbuffer[3] & 0xf;
-       lk = 0233;
        break;
     case 0x4:
        mt = 4;
@@ -3132,6 +3209,9 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
     char* tptr;
     char buf[32];
 
+    status = udp_create (&imp_dev, "22002:localhost:22001", &imp_data.link);
+    imp_data.rpos = 0;
+
 #if !KS
     /* Set to correct device number */
     switch(GET_DTYPE(imp_unit[0].flags)) {
@@ -3173,6 +3253,10 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
       return sim_messagef (SCPE_NOATT, "%s: Can't set packet filter for MAC Address %s\n",
                        imp_dev.name, buf);
     }
+
+    /* Start out in a "host not ready" state. */
+    uptr->STATUS |= IMPHER;
+    uptr->STATUS &= IMPHR;
 
     uptr->filename = tptr;
     uptr->flags |= UNIT_ATT;
@@ -3227,6 +3311,8 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
 
 t_stat imp_detach(UNIT* uptr)
 {
+    t_stat r;
+    r = udp_release (&imp_dev, imp_data.link);
 
     if (uptr->flags & UNIT_ATT) {
         /* If DHCP, release our IP address */
