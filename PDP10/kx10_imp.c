@@ -1415,6 +1415,7 @@ imp_packet_in(struct imp_device *imp)
    int i, j;
    int32 count = udp_receive(&imp_dev, imp->link, data, MAXDATA);
    if (count > 0) {
+       fprintf(stderr, "udp_receive: %d words, flags %o\r\n", count, data[0]);
        if (data[0] & PFLG_READY)
            imp_unit[0].STATUS |= IMPR;
        else
@@ -1423,6 +1424,8 @@ imp_packet_in(struct imp_device *imp)
        if (count == 1)
            return;
        for (i = 1, j = imp->rpos; i < count; i++, j+=2) {
+           fprintf(stderr, "%03d: %06o %03o %03o\r\n",
+                   i-1, data[i], data[i] >> 8, data[i] & 0xFF);
            imp->rbuffer[j] = data[i] >> 8;
            imp->rbuffer[j+1] = data[i] & 0xFF;
        }
@@ -1668,11 +1671,16 @@ imp_send_udp (struct imp_device *imp, int len)
     if ((imp_unit[0].STATUS & IMPHER) == 0)
         data[0] |= PFLG_READY;
 
+    fprintf(stderr, "udp_send: %d octets, flags %o\r\n", len, data[0]);
     for (i = 0, j = 0; i < len/2; i++, j+=2) {
       data[i+1] = (imp->sbuffer[j] << 8) + imp->sbuffer[j+1];
+      fprintf(stderr, "  %03d: %06o %03o %03o\r\n",
+              i, data[i+1], imp->sbuffer[j], imp->sbuffer[j+1]);
     }
     if (len&1) {
       data[i+1] = imp->sbuffer[j] << 8;
+      fprintf(stderr, "  %03d: %06o %03o\r\n",
+              i, data[i+1], imp->sbuffer[j]);
     }
     r = udp_send (&imp_dev, imp->link, data, ((uint16)len+3)/2);
 }
@@ -1692,10 +1700,12 @@ imp_send_packet (struct imp_device *imp, int len)
        Anything else must be an Arpanet NCP message. */
     if (((imp->sbuffer[0] & 0xF) != 15) ||
         imp->sbuffer[8] != 0233) {
+        fprintf(stderr, "NCP data\r\n");
         imp_send_udp(imp, len);
         sim_activate(uptr, tmxr_poll);
         return;
     }
+    fprintf(stderr, "TCP data\r\n");
 
     lk = 0;
     n = len;
@@ -3211,6 +3221,7 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
 
     status = udp_create (&imp_dev, "22002:localhost:22001", &imp_data.link);
     imp_data.rpos = 0;
+    fprintf(stderr, "udp_create: %d\n", status);
 
 #if !KS
     /* Set to correct device number */
