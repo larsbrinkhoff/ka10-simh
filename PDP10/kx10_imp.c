@@ -862,20 +862,45 @@ static void check_interrupts (UNIT *uptr)
 {
     clr_interrupt (DEVNUM);
 
-    if ((uptr->STATUS & (IMPERR | IMPIC)) == IMPERR)
-        set_interrupt(DEVNUM, imp_data.pia >> 6);
-    if ((uptr->STATUS & (IMPR | IMPIC)) == (IMPR | IMPIC))
-        set_interrupt(DEVNUM, imp_data.pia >> 6);
-    if ((uptr->STATUS & (IMPHER | IMPIHE)) == IMPHER)
-        set_interrupt(DEVNUM, imp_data.pia >> 6);
-    if (uptr->STATUS & IMPID) {
-        if (uptr->STATUS & IMPLW)
+    switch (GET_DTYPE(uptr->flags)) {
+    case TYPE_MIT:
+        if ((uptr->STATUS & (IMPERR | IMPIC)) == IMPERR)
+            set_interrupt(DEVNUM, imp_data.pia >> 6);
+        if ((uptr->STATUS & (IMPR | IMPIC)) == (IMPR | IMPIC))
+            set_interrupt(DEVNUM, imp_data.pia >> 6);
+        if ((uptr->STATUS & (IMPHER | IMPIHE)) == IMPHER)
+            set_interrupt(DEVNUM, imp_data.pia >> 6);
+        if (uptr->STATUS & IMPID) {
+            if (uptr->STATUS & IMPLW)
+                set_interrupt(DEVNUM, imp_data.pia);
+            else
+                set_interrupt_mpx(DEVNUM, imp_data.pia, imp_mpx_lvl);
+        }
+        if (uptr->STATUS & IMPOD)
+            set_interrupt_mpx(DEVNUM, imp_data.pia >> 3, imp_mpx_lvl + 1);
+        break;
+    case TYPE_WAITS:
+      /*
+	CONSZ	IMP,040000	; ERROR BIT
+	JRST	IMPERB		; YES, HE MIGHT BE DEAD
+	CONSZ	IMP,030000	; INPUT DONE OR INPUT END?
+	JRST	IMPINT
+IMPOTS:	CONSZ	IMP,004000	; OUTPUT DONE?
+	JRST	IMPOUT		; YES
+      */
+        if (uptr->STATUS & IMPOD) {
             set_interrupt(DEVNUM, imp_data.pia);
-        else
-            set_interrupt_mpx(DEVNUM, imp_data.pia, imp_mpx_lvl);
+            fprintf (stderr, "IMP interrupt: output done\r\n");
+        }
+        if (uptr->STATUS & IMPID) {
+            set_interrupt(DEVNUM, imp_data.pia >> 3);
+            fprintf (stderr, "IMP interrupt: input done\r\n");
+        }
+        if (uptr->STATUS & IMPLW) {
+            set_interrupt(DEVNUM, imp_data.pia >> 6);
+            fprintf (stderr, "IMP interrupt: input end\r\n");
+        }
     }
-    if (uptr->STATUS & IMPOD)
-       set_interrupt_mpx(DEVNUM, imp_data.pia >> 3, imp_mpx_lvl + 1);
 }
 
 static void imp_send_host_ready(DEVICE *dptr, struct imp_device *imp)
@@ -1426,6 +1451,9 @@ imp_receive_udp (DEVICE *dev, struct imp_device *imp)
     for (i = 1; i < count; i++) {
         imp->rbuffer[imp->rpos++] = data[i] >> 8;
         imp->rbuffer[imp->rpos++] = data[i] & 0xFF;
+        sim_debug(DEBUG_DETAIL, &imp_dev,
+                  " <<< %06o %03o %03o\n",
+                  data[i], data[i] >> 8, data[i] & 0xFF);
     }
     if ((data[0] & PFLG_FINAL) == 0 || imp->rpos == 0)
         return;
@@ -1682,10 +1710,18 @@ imp_send_udp (struct imp_device *imp, int len)
     if ((imp_unit[0].STATUS & IMPHER) == 0)
         data[0] |= PFLG_READY;
 
-    for (i = 0, j = 0; i < len/2; i++, j+=2)
+    for (i = 0, j = 0; i < len/2; i++, j+=2) {
         data[i+1] = (imp->sbuffer[j] << 8) + imp->sbuffer[j+1];
-    if (len&1)
+        sim_debug(DEBUG_DETAIL, &imp_dev,
+                  " >>> %06o %03o %03o\n",
+                  data[i+1], data[i+1] >> 8, data[i+1] & 0xFF);
+    }
+    if (len&1) {
         data[i+1] = imp->sbuffer[j] << 8;
+        sim_debug(DEBUG_DETAIL, &imp_dev,
+                  " >>> %06o %03o\n",
+                  data[i+1], data[i+1] >> 8);
+    }
     r = udp_send (&imp_dev, imp->link, data, ((uint16)len+3)/2);
 }
 
@@ -3209,6 +3245,8 @@ t_stat imp_reset (DEVICE *dptr)
 #endif
     if (imp_unit[0].flags & UNIT_ATT)
         sim_activate_after(&imp_unit[2], 1000000);    /* Start Timer service */
+    if (imp_unit[0].flags & UNIT_NCP)
+        sim_cancel(&imp_unit[2]);
     return SCPE_OK;
 }
 
