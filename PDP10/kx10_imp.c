@@ -31,6 +31,7 @@
 #define IMP_DEVNUM      0460
 #define BBN_IMP_DEVNUM  0550
 #define WA_IMP_DEVNUM   0400
+#define DM_IMP_DEVNUM   0424
 
 #define DEVNUM imp_dib.dev_num
 
@@ -44,6 +45,7 @@
 #define TYPE_MIT        0              /* MIT Style KAIMP ITS */
 #define TYPE_BBN        1              /* BBN style interface TENEX */
 #define TYPE_WAITS      2              /* IMP connected to waits system. */
+#define TYPE_DM         3              /* MIT Dynamic Modeling style */
 
 #define TYPE_UNI        0              /* Unibus byte order */
 #define TYPE_SIMP       1              /* PDP10 string byte order */
@@ -607,6 +609,8 @@ MTAB imp_mod[] = {
            "Tenex/BBN style interface"},
     { UNIT_DTYPE, (TYPE_WAITS << UNIT_V_DTYPE), "WAITS", "WAITS", NULL, NULL,  NULL,
            "WAITS style interface"},
+    { UNIT_DTYPE, (TYPE_DM << UNIT_V_DTYPE),  "DM",  "DM", NULL, NULL,  NULL,
+           "Dynamic Modeling style interface"},
 #endif
     { MTAB_XTD|MTAB_VDV|MTAB_NMO, 0, "ARP", NULL,
       NULL, &imp_show_arp, NULL, "ARP IP address->MAC address table" },
@@ -945,6 +949,9 @@ t_stat imp_devio(uint32 dev, uint64 *data)
              }
              check_interrupts(uptr);
              break;
+        case TYPE_DM:
+             // TODO
+             break;
         }
         break;
     case CONI:
@@ -966,6 +973,9 @@ t_stat imp_devio(uint32 dev, uint64 *data)
                  *data |= IMP_IEND;
              if (uptr->STATUS & (IMPERR|IMPHER))
                  *data |= IMP_ERR;
+             break;
+        case TYPE_DM:
+             // TODO
              break;
         }
         sim_debug(DEBUG_CONI, dptr, "IMP %03o CONI %012llo PC=%o\n", dev,
@@ -3143,6 +3153,9 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
                    break;
     case TYPE_WAITS:
                    imp_dib.dev_num = WA_IMP_DEVNUM;
+                   break;
+    case TYPE_DM:
+                   imp_dib.dev_num = DM_IMP_DEVNUM;
                    break;
     }
 #endif
