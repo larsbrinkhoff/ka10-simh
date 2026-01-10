@@ -915,6 +915,8 @@ t_stat imp_devio(uint32 dev, uint64 *data)
              if (*data & IMPIR) { /* Enable interrupt on IMP ready. */
                  uptr->STATUS |= IMPIC;
                  uptr->STATUS &= ~IMPERR;
+             } else {
+                 uptr->STATUS &= ~IMPIC;
              }
              if (*data & IMPHEC) { /* Clear host error. */
                  /* Only if there has been a CONI lately. */
@@ -1422,7 +1424,7 @@ imp_receive_udp (DEVICE *dev, struct imp_device *imp)
     if (data[0] & PFLG_READY)
         imp_unit[0].STATUS |= IMPR;
     else
-        imp_unit[0].STATUS &= IMPR;
+        imp_unit[0].STATUS &= ~IMPR;
     for (i = 1; i < count; i++) {
         imp->rbuffer[imp->rpos++] = data[i] >> 8;
         imp->rbuffer[imp->rpos++] = data[i] & 0xFF;
