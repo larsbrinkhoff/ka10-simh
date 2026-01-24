@@ -491,6 +491,7 @@ extern DEVICE   dpa_dev;
 extern DEVICE   dpb_dev;
 extern DEVICE   dpc_dev;
 extern DEVICE   dpd_dev;
+extern DEVICE   tf_dev;
 extern DEVICE   imp_dev;
 extern DEVICE   rpa_dev;
 extern DEVICE   rpb_dev;
@@ -809,6 +810,7 @@ extern void ka10_lights_clear_aux (int);
 #define NUM_DEVS_CH10   ITS
 #define NUM_DEVS_DPK    ITS
 #define NUM_DEVS_AI     ITS
+#define NUM_DEVS_TF     BBN
 #endif
 #if KL_ITS
 #define NUM_DEVS_PD     KL_ITS
