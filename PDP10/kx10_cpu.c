@@ -888,8 +888,8 @@ void set_interrupt(int dev, int lvl) {
        pi_pending = 1;
        IOB_PI |= 0200 >> lvl;
 #if DEBUG
-       sim_debug(DEBUG_IRQ, &cpu_dev, "set irq %o %o %03o %03o %03o\n",
-              dev & 0774, lvl, PIE, PIR, PIH);
+       sim_debug(DEBUG_IRQ, &cpu_dev, "set irq %o %o %03o %03o %03o PC=%06o\n",
+                 dev & 0774, lvl, PIE, PIR, PIH, PC);
 #endif
     }
 }
@@ -924,7 +924,8 @@ void clr_interrupt(int dev) {
     IOB_PI = lvl;
 #if DEBUG
     if (dev > 4)
-        sim_debug(DEBUG_IRQ, &cpu_dev, "clear irq %o\n", dev & 0774);
+      sim_debug(DEBUG_IRQ, &cpu_dev, "clear irq %o PC=%06o\n",
+                dev & 0774, PC);
 #endif
 }
 
@@ -1008,7 +1009,8 @@ void restore_pi_hold() {
         if (lvl & PIH) {
             PIR &= ~lvl;
 #if DEBUG
-            sim_debug(DEBUG_IRQ, &cpu_dev, "restore irq %o %03o\n", lvl, PIH);
+            sim_debug(DEBUG_IRQ, &cpu_dev, "restore irq %o %03o, PC=%06o\n",
+                      lvl, PIH, PC);
 #endif
             PIH &= ~lvl;
 #if KS_ITS
@@ -4838,8 +4840,8 @@ in_loop:
 st_pi:
 #endif
 #if DEBUG
-        sim_debug(DEBUG_IRQ, &cpu_dev, "trap irq %o %03o %03o \n",
-                       pi_enc, PIR, PIH);
+        sim_debug(DEBUG_IRQ, &cpu_dev, "trap irq %o %03o %03o PC=%06o\n",
+                  pi_enc, PIR, PIH, PC);
 #endif
         pi_cycle = 1;
         pi_rq = 0;

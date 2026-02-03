@@ -99,6 +99,8 @@ t_stat cty_devio(uint32 dev, uint64 *data) {
         break;
      case CONO:
          res = *data;
+         sim_debug(DEBUG_CONO, &cty_dev, "CTY CONO %06llo %06o %06o\n",
+                   res, cty_unit[0].STATUS, cty_unit[1].STATUS);
          cty_unit[0].PIA = res & 07;
          cty_unit[1].PIA = res & 07;
          cty_unit[0].PIA &= ~(KEY_TST);
@@ -106,6 +108,9 @@ t_stat cty_devio(uint32 dev, uint64 *data) {
          cty_unit[0].STATUS |= (res & (TEL_RDY | TEL_BSY | KEY_TST));
          cty_unit[1].STATUS &= ~((res >> 4) & (KEY_RDY | KEY_BSY));
          cty_unit[1].STATUS |= (res & (KEY_RDY | KEY_BSY));
+         sim_debug(DEBUG_CONO, &cty_dev, "CTY CONO %06o %06o %06o %06o\n",
+                   cty_unit[0].STATUS, cty_unit[1].STATUS,
+                   TEL_RDY, KEY_RDY);
          if ((cty_unit[0].STATUS & TEL_RDY) || (cty_unit[1].STATUS & KEY_RDY))
              set_interrupt(dev, cty_unit[0].PIA);
          else
@@ -148,8 +153,10 @@ t_stat ctyo_svc (UNIT *uptr)
         }
     }
     uptr->STATUS &= ~TEL_BSY;
-    uptr->STATUS |= TEL_RDY;
-    set_interrupt(CTY_DEVNUM, uptr->PIA);
+    if (1 || uptr->PIA) {
+      uptr->STATUS |= TEL_RDY;
+      set_interrupt(CTY_DEVNUM, uptr->PIA);
+    }
     return SCPE_OK;
 }
 
