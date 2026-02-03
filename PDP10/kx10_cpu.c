@@ -936,8 +936,10 @@ int check_irq_level() {
     int pi_req;
 
     /* If PXCT don't check for interrupts */
-    if (xct_flag != 0)
+    if (xct_flag != 0) {
+        pi_enc = 0;
         return 0;
+    }
 
     /* If not enabled, check if any pending Processor IRQ */
     if (pi_enable == 0) {
@@ -953,6 +955,7 @@ int check_irq_level() {
            }
        }
 #endif
+       pi_enc = 0;
        return 0;
     }
     lvl = IOB_PI;
@@ -987,6 +990,7 @@ int check_irq_level() {
            return 1;
         }
     }
+    pi_enc = 0;
     return 0;
 }
 
@@ -1020,6 +1024,8 @@ void restore_pi_hold() {
  */
 void set_pi_hold() {
      int pi = pi_enc;
+     if (pi == 0)
+       return;
 #if MPX_DEV
      if (mpx_enable && cpu_unit[0].flags & UNIT_MPX && pi > 07)
         pi = 1;
@@ -6387,6 +6393,7 @@ dpnorm:
                        goto last;
                    }
                    PC = AR & RMASK;
+                   f_pc_inh = 1;
                    break;
               }
 #endif
