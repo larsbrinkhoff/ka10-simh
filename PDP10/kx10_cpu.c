@@ -104,6 +104,7 @@
 #define HIST_MAX        5000000
 #define TMR_RTC         0
 #define TMR_QUA         1
+#define DEBUG           1
 
 
 uint64  M[MAXMEMSIZE];                        /* Memory */
