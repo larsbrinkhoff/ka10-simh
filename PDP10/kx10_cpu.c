@@ -105,6 +105,7 @@
 #define TMR_RTC         0
 #define TMR_QUA         1
 #define DEBUG           1
+#define DEBUG_PAGER     0x0000800 // Debug pager requests.
 
 
 uint64  M[MAXMEMSIZE];                        /* Memory */
@@ -695,6 +696,7 @@ DEBTAB              cpu_debug[] = {
     {"CONI", DEBUG_CONI, "Show coni instructions"},
     {"CONO", DEBUG_CONO, "Show cono instructions"},
     {"DATAIO", DEBUG_DATAIO, "Show datai and datao instructions"},
+    {"PAGER", DEBUG_PAGER, "Show pager requests"},
 #if KS
     {"DATA", DEBUG_DATA, "Show data transfers"},
     {"DETAIL", DEBUG_DETAIL, "Show details about device"},
@@ -1646,9 +1648,11 @@ t_stat dev_pag(uint32 dev, uint64 *data) {
         01000, 0040, 0100, 0140, 0200, 0240, 0300, 0340};
     switch(dev & 03) {
     case CONI:
+        sim_debug(DEBUG_PAGER, &cpu_dev, "CONI\n");
         break;
 
      case CONO:
+        sim_debug(DEBUG_PAGER, &cpu_dev, "CONO %llo\n", *data);
         switch (*data & 07) {
         case 0:  /* Clear page tables, reload from 71 & 72 */
                  for (i = 0; i < 512; i++)
@@ -1659,8 +1663,12 @@ t_stat dev_pag(uint32 dev, uint64 *data) {
                  ac_stack = (res >> 9) & 0760;
                  user_base_reg = (res >> 9) & 03777000;
                  user_limit = page_limit[(res >> 30) & 07];
+                 sim_debug(DEBUG_PAGER, &cpu_dev,
+                           "71: %llo, %07o, %07o\n",
+                           res, mon_base_reg, user_base_reg);
                  sim_interval--;
                  pur = M[072];
+                 sim_debug(DEBUG_PAGER, &cpu_dev, "72: %012llo\n", pur & FMASK);
                  break;
 
         case 1:  /* Clear exec mapping */
@@ -1692,13 +1700,14 @@ t_stat dev_pag(uint32 dev, uint64 *data) {
                  exec_map = 1;
                  break;
         }
-        sim_debug(DEBUG_CONO, &cpu_dev, "CONO PAG %012llo\n", *data);
         break;
 
     case DATAO:
+       sim_debug(DEBUG_PAGER, &cpu_dev, "DATAO %llo\n", *data);
        break;
 
     case DATAI:
+       sim_debug(DEBUG_PAGER, &cpu_dev, "DATAI\n");
        break;
     }
     return SCPE_OK;
@@ -3750,6 +3759,7 @@ int page_lookup_bbn(t_addr addr, int flag, t_addr *loc, int wr, int cur_context,
 
 lookup:
     if (uf) {
+        sim_debug(DEBUG_PAGER, &cpu_dev, "User page lookup\n");
         if (page > user_limit) {
             /* over limit violation */
             fault_data = 0401000;
@@ -3771,34 +3781,45 @@ lookup:
              base = mon_base_reg;
         else
              base = 03000;
+        sim_debug(DEBUG_PAGER, &cpu_dev,
+                  "Monitor page lookup %03o, base %07o\n", page, base);
         sim_interval--;
         tlb_data = e_tlb[page];
     }
     if (tlb_data != 0) {
 access:
+        sim_debug(DEBUG_PAGER, &cpu_dev, "Map hit");
         *loc = ((tlb_data & 03777) << 9) + (addr & 0777);
         /* Check access */
         if (wr && (tlb_data & 0200000) == 0) {
+            sim_debug(DEBUG_PAGER, &cpu_dev, ", no write\n");
             fault_data = 0402000;
             goto fault_bbn;
         } else if (fetch && (tlb_data & 0100000) == 0) {
+            sim_debug(DEBUG_PAGER, &cpu_dev, ", no execute\n");
             fault_data = 0404000;
             goto fault_bbn;
         } else if ((tlb_data & 0400000) == 0) {
+            sim_debug(DEBUG_PAGER, &cpu_dev, ", no access\n");
             fault_data = 0404000;
             goto fault_bbn;
         }
+        sim_debug(DEBUG_PAGER, &cpu_dev, ", ok\n");
         return 1;
     }
+    sim_debug(DEBUG_PAGER, &cpu_dev, "Pager map miss\n");
     traps = FMASK;
     /* Map the page */
     match = 0;
     while (!match) {
         sim_interval--;
         data = M[base + map];
+        sim_debug(DEBUG_PAGER, &cpu_dev, "map %04o data %012llo\n",
+                  map, data);
 
         switch ((data >> 34) & 03) {
         case 0:      /* Direct page */
+             sim_debug(DEBUG_PAGER, &cpu_dev, "Direct\n");
              /* Bit 4 = execute */
              /* Bit 3 = Write */
              /* Bit 2 = Read */
@@ -3809,6 +3830,7 @@ access:
              break;
 
         case 1:      /* Shared page */
+             sim_debug(DEBUG_PAGER, &cpu_dev, "Shared\n");
              /* Check trap */
              base = 020000;
              map = (data & BBN_SPT) >> 9;
@@ -3818,6 +3840,7 @@ access:
              break;
 
         case 2:      /* Indirect page */
+             sim_debug(DEBUG_PAGER, &cpu_dev, "Indirect\n");
              if (lvl == 2) {
                  /* Trap */
                  fault_data =  0201000;
@@ -3831,11 +3854,13 @@ access:
              break;
 
         case 3:      /* Invalid page */
+             sim_debug(DEBUG_PAGER, &cpu_dev, "Invalid\n");
              /* Trap all  */
              fault_data = ((lvl != 0)? 0200000: 0)  | 0401000;
              goto fault_bbn;
         }
         if ((traps & (BBN_TRP|BBN_TRP1)) == (BBN_TRP|BBN_TRP1)) {
+           sim_debug(DEBUG_PAGER, &cpu_dev, "TRP|TRP1\n");
            fault_data = 04000;
            goto fault_bbn;
         }
@@ -3847,14 +3872,20 @@ access:
     }
     /* Handle traps */
     if (wr && (traps & BBN_TRPMOD)) {
+        sim_debug(DEBUG_PAGER, &cpu_dev, "wr && (traps & BBN_TRPMOD)\n");
         fault_data = ((lvl != 0)? 0200000: 0)  | 0440000;
         goto fault_bbn;
     }
     if ((traps & BBN_TRPUSR)) {
+        sim_debug(DEBUG_PAGER, &cpu_dev, "traps & BBN_TRPUSR\n");
         fault_data = ((lvl != 0)? 0200000: 0)  | 0420000;
         goto fault_bbn;
     }
     if ((traps & BBN_ACC) == 0 || (traps & BBN_TRP)) {
+        if ((traps & BBN_ACC) == 0)
+          sim_debug(DEBUG_PAGER, &cpu_dev, "(traps & BBN_ACC) == 0\n");
+        if (traps & BBN_TRP)
+          sim_debug(DEBUG_PAGER, &cpu_dev, "traps & BBN_TRP\n");
         fault_data = ((lvl != 0)? 0200000: 0)  | 0410000;
         goto fault_bbn;
     }
@@ -3862,6 +3893,7 @@ access:
     sim_interval--;
     data = M[04000 + (tlb_data & 03777)];
     if ((data & 00700000000000LL) == 0) {
+        sim_debug(DEBUG_PAGER, &cpu_dev, "(data & 00700000000000LL) == 0\n");
         fault_data = 0100000 >> ((data >> 31) & 03);
         goto fault_bbn;
     }
@@ -3873,6 +3905,7 @@ access:
     goto access;
       /* Handle fault */
 fault_bbn:
+    sim_debug(DEBUG_PAGER, &cpu_dev, "Fault\n");
     /* Write location of trap to PSB 571 */
     /* If write write MB to PSB 752 */
     /* Force APR to execute at location 70 */
@@ -12047,6 +12080,7 @@ last:
     modify = 0;
 #if BBN
     if (QBBN && page_fault) {
+        sim_debug(DEBUG_PAGER, &cpu_dev, "Trap\n");
         page_fault = 0;
         AB = 070 + maoff;
         f_pc_inh = 1;
