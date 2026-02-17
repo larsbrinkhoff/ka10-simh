@@ -3835,8 +3835,13 @@ access:
              base = 020000;
              map = (data & BBN_SPT) >> 9;
              traps &= data & (BBN_MERGE|BBN_PAGE);
-             data = 0;
+             tlb_data = (uint32)((data & (BBN_EXEC|BBN_WRITE|BBN_READ)) >> 16);
              lvl ++;
+        data = M[base + map];
+        sim_debug(DEBUG_PAGER, &cpu_dev, "map %04o data %012llo\n",
+                  map, data);
+             tlb_data |= (uint32)(data & 03777);
+             match = 1;
              break;
 
         case 2:      /* Indirect page */
