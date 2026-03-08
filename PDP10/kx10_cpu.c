@@ -1656,7 +1656,7 @@ t_stat dev_pag(uint32 dev, uint64 *data) {
 
      case CONO:
         sim_debug(DEBUG_PAGER, &cpu_dev, "CONO %llo\n", *data);
-        switch (*data & 07) {
+        switch (*data & 017) {
         case 0:  /* Clear page tables, reload from 71 & 72 */
                  for (i = 0; i < 512; i++)
                     e_tlb[i] = u_tlb[i] = 0;
@@ -1701,6 +1701,12 @@ t_stat dev_pag(uint32 dev, uint64 *data) {
         case 7:  /* Pager on, resident mapping */
                  page_enable = 1;
                  exec_map = 1;
+                 break;
+
+        case 010:/* Set AC base register */
+                 sim_interval--;
+                 res = M[071];
+                 ac_stack = (res >> 9) & 0760;
                  break;
         }
         break;
