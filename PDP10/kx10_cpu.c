@@ -3726,7 +3726,7 @@ int page_lookup_bbn(t_addr addr, int flag, t_addr *loc, int wr, int cur_context,
     }
 
     /* Umove instructions handled here */
-    if ((IR & 0774) == 0100 && (FLAGS & EXJSYS) == 0)
+    if (!fetch && (IR & 0774) == 0100 && (FLAGS & EXJSYS) == 0)
         uf = 1;
     /* Figure out if this is a user space access */
     if (flag)
