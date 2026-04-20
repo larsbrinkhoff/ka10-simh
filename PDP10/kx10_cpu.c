@@ -3712,6 +3712,7 @@ int page_lookup_bbn(t_addr addr, int flag, t_addr *loc, int wr, int cur_context,
     int      uf = (FLAGS & USER) != 0;
     int      map = page;
     int      match;
+    int      exj = (xct_flag != 0) && ((FLAGS & EXJSYS) != 0);
 
     if (page_fault)
         return 0;
@@ -3753,7 +3754,7 @@ int page_lookup_bbn(t_addr addr, int flag, t_addr *loc, int wr, int cur_context,
     }
 
     /* If not really user mode and register access */
-    if (addr < 020 && uf && (FLAGS & USER) == 0) {
+    if (addr < 020 && (uf || exj) && (FLAGS & USER) == 0) {
         if (QWAITS)
            goto lookup;
         addr |= 0775000 | ac_stack;
