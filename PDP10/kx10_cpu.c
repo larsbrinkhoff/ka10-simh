@@ -3731,25 +3731,25 @@ int page_lookup_bbn(t_addr addr, int flag, t_addr *loc, int wr, int cur_context,
     /* Figure out if this is a user space access */
     if (flag)
         uf = 0;
-    else {
-         if (QWAITS && xct_flag != 0 && !fetch) {
-             if (xct_flag & 010 && cur_context)   /* Indirect */
-                 uf = 1;
-             if (xct_flag & 004 && wr == 0)       /* XR */
-                 uf = 1;
-             if (xct_flag & 001 && (wr == 1 || BYF5))  /* XW or XLB or XDB */
-                 uf = 1;
-         }
-         if (!QWAITS && (FLAGS & EXJSYS) == 0 && xct_flag != 0 && !fetch) {
-             if (xct_flag & 010 && cur_context)
-                 uf = 1;
-             if (xct_flag & 004 && wr == 0)
-                 uf = 1;
-             if (xct_flag & 002 && BYF5)
-                 uf = 1;
-             if (xct_flag & 001 && wr == 1)
-                 uf = 1;
-         }
+    else if (fetch)
+        ;
+    else if (QWAITS) {
+        if (xct_flag & 010 && cur_context)   /* Indirect */
+            uf = 1;
+        if (xct_flag & 004 && wr == 0)       /* XR */
+            uf = 1;
+        if (xct_flag & 001 && (wr == 1 || BYF5))  /* XW or XLB or XDB */
+            uf = 1;
+    } else if ((FLAGS & EXJSYS) == 0) {
+        /* TENEX: access user space unless coming from a monitor JSYS call. */
+        if (xct_flag & 010 && cur_context)
+            uf = 1;
+        if (xct_flag & 004 && wr == 0)
+            uf = 1;
+        if (xct_flag & 002 && BYF5)
+            uf = 1;
+        if (xct_flag & 001 && wr == 1)
+            uf = 1;
     }
 
     /* If not really user mode and register access */
