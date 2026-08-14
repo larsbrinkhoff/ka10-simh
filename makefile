@@ -1615,8 +1615,8 @@ KL10 = ${KL10D}/kx10_cpu.c ${KL10D}/kx10_sys.c ${KL10D}/kx10_df.c \
     ${KL10D}/kl10_dn.c ${IMPUDP}
 KL10_OPT = -DKL=1 -DUSE_INT64 -DVM_IMPTIP -I ${KL10D} -DUSE_SIM_CARD ${NETWORK_OPT} 
 ifneq (${PIDP10},)
-KS10_OPT += -DPIDP10=1
-KS10 += ${KS10D}/ka10_pipanel.c
+KL10_OPT += -DPIDP10=1
+KL10 += ${KL10D}/ka10_pipanel.c
 endif
 
 KS10D = ${SIMHD}/PDP10
